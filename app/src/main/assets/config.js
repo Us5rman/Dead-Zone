@@ -1,1 +1,1 @@
-window.DZ_SERVER = 'wss://YOUR-SERVER.onrender.com';
+window.DZ_SERVER = 'wss://dead-zone-relay.onrender.com';
