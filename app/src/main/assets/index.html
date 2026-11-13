@@ -23,11 +23,19 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none
 #joy{position:fixed;left:calc(env(safe-area-inset-left,0px) + 24px);bottom:calc(env(safe-area-inset-bottom,0px) + 24px);width:120px;height:120px;border:2px solid #fff4;border-radius:50%}
 #knob{position:absolute;left:40px;top:40px;width:40px;height:40px;border-radius:50%;background:#fff5}
 .tb{position:fixed;border:2px solid #fff6;border-radius:50%;background:#fff2;display:flex;align-items:center;justify-content:center;font-size:13px}
-#fire{right:calc(env(safe-area-inset-right,0px) + 24px);bottom:calc(env(safe-area-inset-bottom,0px) + 34px);width:84px;height:84px;background:#a224}
-#rel{right:calc(env(safe-area-inset-right,0px) + 120px);bottom:calc(env(safe-area-inset-bottom,0px) + 110px);width:54px;height:54px}
+#fire{right:calc(env(safe-area-inset-right,0px) + 74px);bottom:calc(env(safe-area-inset-bottom,0px) + 34px);width:84px;height:84px;background:#a224}
+#rel{right:calc(env(safe-area-inset-right,0px) + 156px);bottom:calc(env(safe-area-inset-bottom,0px) + 128px);width:54px;height:54px}
 .ov{z-index:5}
 .ov input{margin-top:10px;padding:10px;font:inherit;font-size:18px;width:120px;text-align:center;text-transform:uppercase;background:#111;color:#eee;border:2px solid #555;-webkit-user-select:text;user-select:text}
 .ov .row{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap}
+#sfit{display:flex;flex-direction:column;align-items:center;transform-origin:center center}
+@media (max-height:560px){
+.ov{padding:6px}
+.ov h1{font-size:28px;margin:0 0 4px;letter-spacing:3px}
+.ov p{font-size:12px;line-height:1.5;margin:2px;max-width:600px}
+.ov button{margin-top:8px;padding:7px 24px;font-size:15px}
+.ov input{margin-top:8px;padding:6px;font-size:15px;width:100px}
+}
 #room{font-weight:bold;letter-spacing:2px;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 8px);text-align:center;font-size:20px;color:#9c9}
 #nst{min-height:22px;color:#cc8;direction:rtl}
 #dd{left:0;right:0;top:38%;text-align:center;font-size:24px;color:#c33;display:none;direction:rtl}
@@ -41,7 +49,7 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none
 <div class="hud" id="room"></div>
 <div class="hud" id="dd">YOU DIED — منتظر موج بعدی</div>
 <div id="touch"><div id="joy"><div id="knob"></div></div><div class="tb" id="fire">FIRE</div><div class="tb" id="rel">R</div></div>
-<div class="ov" id="start"><h1>DEAD ZONE</h1>
+<div class="ov" id="start"><div id="sfit"><h1>DEAD ZONE</h1>
 <p>شب است و مرده‌های متحرک همه‌جا هستند. تا جایی که می‌توانی زنده بمان.</p>
 <p>کامپیوتر: WASD حرکت، ماوس نشانه‌گیری، کلیک شلیک، Shift دویدن، R بارگذاری.</p>
 <p>موبایل: جوی‌استیک چپ حرکت، کشیدن انگشت روی سمت راست نشانه‌گیری، دکمه FIRE شلیک. شلیک به سر ۳ برابر آسیب دارد.</p>
@@ -49,7 +57,7 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none
 <button id="go">START (SOLO)</button>
 <div class="row"><button id="host">HOST ROOM</button></div>
 <div class="row"><input id="code" maxlength="4" placeholder="CODE" autocomplete="off"><button id="join">JOIN</button></div>
-<p id="nst"></p></div>
+<p id="nst"></p></div></div>
 <div class="ov" id="over" style="display:none"><h1>YOU DIED</h1><p id="sc"></p><button id="again">RESTART</button></div>
 <script src="config.js"></script>
 <script src="three.min.js"></script>
@@ -526,4 +534,17 @@ if(isTouch){
   const end=e=>{for(const t of e.changedTouches){if(t.identifier===jid){jid=null;mv.x=mv.y=0;kn.style.transform=''}if(t.identifier===lid)lid=null}};
   document.addEventListener('touchend',end);document.addEventListener('touchcancel',end);
 }
-</script></body></html>
+</script><script>
+(function(){
+  const box=document.getElementById('sfit'),ov=document.getElementById('start');
+  function fit(){
+    box.style.transform='none';
+    if(!box.offsetHeight||ov.style.display==='none')return;
+    const k=Math.min(1,(innerHeight-12)/box.offsetHeight,(innerWidth-12)/box.offsetWidth);
+    box.style.transform=k<1?'scale('+k+')':'none'}
+  addEventListener('resize',fit);addEventListener('orientationchange',fit);
+  if(window.ResizeObserver)new ResizeObserver(fit).observe(box);
+  fit()
+})();
+</script>
+</body></html>
