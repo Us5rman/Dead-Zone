@@ -29,14 +29,18 @@ final class World {
     final ArrayList<Batch> solid = new ArrayList<>();
     final ArrayList<Batch> blend = new ArrayList<>();
 
-    final Random rng = new Random();
+    final Random rng;
+    final long seed;
     private final LinkedHashMap<Mat, FloatList> acc = new LinkedHashMap<>();
 
     Mat mGround, mBrick, mWood, mSkin, mShirt, mPants, mGun, mConc, mCrate, mRust, mSand, mFloor, mRd, mCloth;
     Mat mTire, mDark, mBulb, mPool, mMud, mGlass, mMirror;
     private Geo sg;
 
-    World() {
+    World(long seed) {
+        this.seed = seed;
+        rng = new Random(seed);
+        Tex.R.setSeed(seed * 31 + 7);
         buildMats();
         build();
         for (java.util.Map.Entry<Mat, FloatList> e : acc.entrySet()) {
@@ -283,11 +287,12 @@ final class World {
 
     private Tex.Painter grf(String s, int px) {
         Tex.Painter t = txt(s, "#a01010", px);
+        final Random gr = new Random(s.hashCode() * 31L + px);
         return (c, W, H) -> {
             t.paint(c, W, H);
             for (int i = 0; i < 12; i++) {
-                Tex.rect(c, "#7a0a0a", (int) (W * .1 + rng.nextDouble() * W * .8), (int) (H * .5 + px * .35), 2,
-                        (int) (3 + rng.nextDouble() * H * .3));
+                Tex.rect(c, "#7a0a0a", (int) (W * .1 + gr.nextDouble() * W * .8), (int) (H * .5 + px * .35), 2,
+                        (int) (3 + gr.nextDouble() * H * .3));
             }
         };
     }
@@ -373,6 +378,121 @@ final class World {
         mesh(Prim.circle(.9, 8), mPool, x, .055, z, -PI / 2, 0, 0);
     }
 
+    private double rx, rz;
+    private boolean roadV;
+    private final ArrayList<double[]> zones = new ArrayList<>();
+
+    private boolean spaceFree(double x, double z, double w, double d, double m) {
+        if (Math.abs(x) - w / 2 < 6.5 && Math.abs(z) - d / 2 < 6.5) return false;
+        if (Math.abs(x) + w / 2 > 42 || Math.abs(z) + d / 2 > 42) return false;
+        for (double[] o : obs) {
+            if (Math.abs(x - o[0]) < (w + o[2]) / 2 + m && Math.abs(z - o[1]) < (d + o[3]) / 2 + m) return false;
+        }
+        for (double[] o : zones) {
+            if (Math.abs(x - o[0]) < (w + o[2]) / 2 + m && Math.abs(z - o[1]) < (d + o[3]) / 2 + m) return false;
+        }
+        return true;
+    }
+
+    private double[] find(double w, double d, double m, int tries) {
+        for (int i = 0; i < tries; i++) {
+            double x = rnd(-40, 40), z = rnd(-40, 40);
+            if (spaceFree(x, z, w, d, m)) return new double[]{x, z};
+        }
+        return null;
+    }
+
+    private double[] findRoad(double w, double d, double m) {
+        boolean h = !roadV || rng.nextBoolean();
+        double t = rnd(-38, 38);
+        double x = h ? t : rx + rnd(-2.5, 2.5), z = h ? rz + rnd(-2.5, 2.5) : t;
+        if (!spaceFree(x, z, w, d, m)) return null;
+        return new double[]{x, z, h ? 0 : 1};
+    }
+
+    private double[][] gaps(double len, boolean needDoor) {
+        ArrayList<double[]> l = new ArrayList<>();
+        int n = rng.nextInt(3);
+        if (needDoor && n == 0) n = 1;
+        for (int i = 0; i < n; i++) {
+            boolean door = (needDoor && i == 0) || rng.nextInt(3) == 0;
+            double gw = door ? new double[]{2.6, 3, 3.2}[rng.nextInt(3)] : 1.6;
+            for (int t = 0; t < 12; t++) {
+                double gp = rnd(1.2 + gw / 2, len - 1.2 - gw / 2);
+                boolean ok = true;
+                for (double[] o : l) if (Math.abs(o[0] - gp) < (o[1] + gw) / 2 + 1.2) ok = false;
+                if (ok) {
+                    l.add(door ? d(gp, gw) : d(gp, gw, 1));
+                    break;
+                }
+            }
+        }
+        l.sort((a, b) -> Double.compare(a[0], b[0]));
+        return l.toArray(new double[0][]);
+    }
+
+    private boolean nearGap(double[][] gs, double along, double half) {
+        for (double[] o : gs) if (Math.abs(o[0] - along) < o[1] / 2 + half + 1) return true;
+        return false;
+    }
+
+    private boolean clearOfObs(double x, double z, double w, double d) {
+        for (double[] o : obs) {
+            if (Math.abs(x - o[0]) < (w + o[2]) / 2 + .3 && Math.abs(z - o[1]) < (d + o[3]) / 2 + .3) return false;
+        }
+        return true;
+    }
+
+    private static final String[] TAGS = {"NO ESCAPE", "RUN OR DIE", "THEY COME", "HELP US", "DON'T STOP", "TOO LATE",
+            "BEHIND YOU", "NO HOPE", "STAY AWAY", "DEAD INSIDE", "SURVIVE", "NO MERCY", "RUN", "DEAD ZONE"};
+
+    private void randHouse(double x, double z, double w, double d, double h) {
+        int dw = rng.nextInt(4);
+        int d2 = rng.nextBoolean() ? (dw + 2) % 4 : -1;
+        double[][] n = gaps(w, dw == 0 || d2 == 0);
+        double[][] s = gaps(w, dw == 1 || d2 == 1);
+        double[][] we = gaps(d, dw == 2 || d2 == 2);
+        double[][] e = gaps(d, dw == 3 || d2 == 3);
+        house(x, z, w, d, h, n, s, we, e);
+
+        int nf = 2 + rng.nextInt(3);
+        for (int i = 0; i < nf; i++) {
+            int side = rng.nextInt(4);
+            double fw = rnd(1.2, 2.4), fd = rnd(.8, 1.4), fh = rnd(.5, 1);
+            Mat fm = rng.nextBoolean() ? mWood : mCloth;
+            if (side < 2) {
+                double fx = x + rnd(-w / 2 + 2, w / 2 - 2), fz = side == 0 ? z - d / 2 + .9 : z + d / 2 - .9;
+                if (nearGap(side == 0 ? n : s, fx - (x - w / 2), fw / 2) || !clearOfObs(fx, fz, fw, fd)) continue;
+                box(fx, fz, fw, fd, fh, fm);
+            } else {
+                double fz = z + rnd(-d / 2 + 2, d / 2 - 2), fx = side == 2 ? x - w / 2 + .9 : x + w / 2 - .9;
+                if (nearGap(side == 2 ? we : e, fz - (z - d / 2), fw / 2) || !clearOfObs(fx, fz, fd, fw)) continue;
+                box(fx, fz, fd, fw, fh, fm);
+            }
+        }
+        mesh(Prim.sphere(.18, 5, 4), mBulb, x, h - .7, z);
+        mesh(Prim.cyl(.01, .01, .8, 3, false), mGun, x, h - .2, z);
+        light(0xffc070, 1, 12, x, h - .9, z, rng.nextInt(3) == 0);
+
+        int nd = 1 + rng.nextInt(2);
+        for (int i = 0; i < nd; i++) {
+            int wl = rng.nextInt(4);
+            String tx = TAGS[rng.nextInt(TAGS.length)];
+            double len = wl < 2 ? w : d;
+            double[][] gs = wl == 0 ? n : wl == 1 ? s : wl == 2 ? we : e;
+            for (int t = 0; t < 8; t++) {
+                double along = rnd(1.8, len - 1.8);
+                if (nearGap(gs, along, 1.6)) continue;
+                double dwid = 3, y = 2.6;
+                if (wl == 0) decal(dwid, 1.2, x - w / 2 + along, y, z - d / 2 - .25, PI, grf(tx, 17), true);
+                else if (wl == 1) decal(dwid, 1.2, x - w / 2 + along, y, z + d / 2 + .25, 0, grf(tx, 17), true);
+                else if (wl == 2) decal(dwid, 1.2, x - w / 2 - .25, y, z - d / 2 + along, -PI / 2, grf(tx, 17), true);
+                else decal(dwid, 1.2, x + w / 2 + .25, y, z - d / 2 + along, PI / 2, grf(tx, 17), true);
+                break;
+            }
+        }
+    }
+
     private void build() {
         mesh(Prim.plane(400, 400), mGround, 0, 0, 0, -PI / 2, 0, 0);
         box(0, -46, 96, 2, 6, mBrick);
@@ -383,73 +503,158 @@ final class World {
         mirror(0, 44.9, PI);
         mirror(-44.9, 0, PI / 2);
         mirror(44.9, 0, -PI / 2);
-        for (int r = 0; r < 2; r++) mesh(Prim.plane(92, 8), mRd, 0, .03, 0, -PI / 2, 0, r == 1 ? PI / 2 : 0);
 
-        house(-20, -22, 14, 10, 4, g(d(3, 1.6, 1), d(10, 1.6, 1)), g(d(4, 2.6), d(10, 1.6, 1)), g(d(5, 1.6, 1)), g(d(5, 2.6)));
-        house(22, -22, 12, 10, 4, g(d(6, 2.6)), g(d(3, 3.2), d(8, 1.6, 1)), g(d(5, 2.6)), g(d(4, 1.6, 1)));
-        house(-24, 22, 16, 12, 5, g(d(8, 3.2)), g(d(4, 3.2), d(12, 3.2)), g(d(6, 1.6, 1)), g(d(6, 2.6)));
-        house(24, 24, 10, 10, 3.6, g(d(5, 3)), g(d(5, 3)), NONE, g(d(5, 2.6)));
+        rz = rnd(-14, 14);
+        rx = rnd(-14, 14);
+        roadV = rng.nextInt(4) != 0;
+        mesh(Prim.plane(92, 8), mRd, 0, .03, rz, -PI / 2, 0, 0);
+        if (roadV) mesh(Prim.plane(92, 8), mRd, rx, .03, 0, -PI / 2, 0, PI / 2);
 
-        box(-22, -24, 2.4, 1.2, .9, mWood);
-        box(-16, -25, 1, 1, 1, mCrate);
-        box(22, -25, 7, .8, 1.1, mWood);
-        box(18, -19, 1, 1, 1, mCrate);
-        box(26, -19, 1, 1, 1, mCrate);
-        box(-30, 26, 1.4, 1.4, 1.4, mCrate);
-        box(-30, 24.4, 1.4, 1.4, 1.4, mCrate);
-        box(-18, 27, 3, 1, 2, mCrate);
-        box(-20, 19, 1.2, 1.2, 1.2, mCrate);
-        box(27, 28, 1.5, 1.5, 1.5, mCrate);
+        int nh = 4 + rng.nextInt(4);
+        for (int a = 0, n = 0; a < 300 && n < nh; a++) {
+            double w = Math.round(rnd(9, 17) * 2) / 2.0, d = Math.round(rnd(8, 13) * 2) / 2.0;
+            double h = new double[]{3.6, 4, 5}[rng.nextInt(3)];
+            double x = rnd(-38 + w / 2, 38 - w / 2), z = rnd(-38 + d / 2, 38 - d / 2);
+            if (Math.abs(z - rz) < 5.5 + d / 2) continue;
+            if (roadV && Math.abs(x - rx) < 5.5 + w / 2) continue;
+            if (!spaceFree(x, z, w + 2, d + 2, 3)) continue;
+            zones.add(new double[]{x, z, w, d});
+            randHouse(x, z, w, d, h);
+            n++;
+        }
 
-        car(-10, 1.5, false);
-        car(14, -2, false);
-        car(2, 12, true);
-        car(-3, -14, true);
-        car(34, -4, true);
-        barrel(-12, 7, true);
-        barrel(12, -9, true);
-        barrel(6, 15, false);
-        barrel(-6, -12, false);
-        barrel(-13, 8, false);
-        lamp(5.5, 5.5);
-        lamp(-5.5, -5.5);
-        box(0, -9, 6, .8, .9, mSand);
-        box(-9, 9, .8, 6, .9, mSand);
-        box(9, 9, 6, .8, .9, mSand);
-        box(31, 5, 1.2, 1.2, 1.2, mCrate);
-        box(32.2, 5, 1.2, 1.2, 1.2, mCrate);
-        box(31.6, 5, 1.2, 1.2, 1.2, mCrate);
-        box(-34, -4, 1.3, 1.3, 1.3, mCrate);
-        box(10, 12, 3, 3, .8, mConc);
-        box(10, 12, 1.2, 1.2, 3.5, mConc);
-        for (int z = -40; z <= -10; z += 3) box(40, z, .2, 2.6, 1.6, mWood);
-        perk(-12, -25, 0xcc2222);
-        perk(15, -17, 0xe0b020);
-        perk(-30, 15, 0x2288dd);
-        perk(29, 18, 0xdd6610);
-        for (int i = 0, n = 0; i < 300 && n < 16; i++) {
-            double x = (rng.nextDouble() - .5) * 84, z = (rng.nextDouble() - .5) * 84;
-            if (Math.abs(x) > 6 && Math.abs(z) > 6 && freeAt(x, z)) {
-                box(x, z, .6, .6, 2.5 + rng.nextDouble() * 2, mWood);
-                n++;
+        int nc = 8 + rng.nextInt(5);
+        for (int i = 0, n = 0; i < 120 && n < nc; i++) {
+            boolean onRoad = rng.nextInt(10) < 7;
+            double[] p = onRoad ? findRoad(4.4, 4.4, 1) : find(4.4, 4.4, 1, 1);
+            if (p == null) continue;
+            boolean v = onRoad ? p[2] == 1 : rng.nextBoolean();
+            car(p[0], p[1], v);
+            n++;
+        }
+        int nb = 6 + rng.nextInt(4), fires = 0;
+        for (int i = 0, n = 0; i < 80 && n < nb; i++) {
+            double[] p = find(.9, .9, 1, 1);
+            if (p == null) continue;
+            boolean fire = fires < 3 && rng.nextInt(3) == 0;
+            if (fire) fires++;
+            barrel(p[0], p[1], fire);
+            n++;
+        }
+        int ncr = 10 + rng.nextInt(7);
+        for (int i = 0, n = 0; i < 120 && n < ncr; i++) {
+            double s = rnd(1, 1.8);
+            double[] p = find(s, s, 1, 1);
+            if (p == null) continue;
+            box(p[0], p[1], s, s, s, mCrate);
+            if (rng.nextBoolean() && spaceFree(p[0] + s + .1, p[1], s, s, .2)) box(p[0] + s + .1, p[1], s, s, s, mCrate);
+            n++;
+        }
+        int nsb = 3 + rng.nextInt(3);
+        for (int i = 0, n = 0; i < 80 && n < nsb; i++) {
+            boolean hz = rng.nextBoolean();
+            double[] p = find(hz ? 6 : .8, hz ? .8 : 6, 1, 1);
+            if (p == null) continue;
+            box(p[0], p[1], hz ? 6 : .8, hz ? .8 : 6, .9, mSand);
+            n++;
+        }
+        int nbar = 5 + rng.nextInt(4);
+        for (int i = 0, n = 0; i < 100 && n < nbar; i++) {
+            double ang = rnd(0, 6.28), r = rnd(12, 32);
+            double x = Math.cos(ang) * r, z = Math.sin(ang) * r;
+            boolean hz = rng.nextBoolean();
+            if (!spaceFree(x, z, hz ? 2.6 : .9, hz ? .9 : 2.6, 1)) continue;
+            box(x, z, hz ? 2.6 : .9, hz ? .9 : 2.6, 1, mConc);
+            n++;
+        }
+        int[] perkCol = {0xcc2222, 0xe0b020, 0x2288dd, 0xdd6610};
+        String[] perkTxt = {"JUGGER-NOG", "SPEED COLA", "QUICK REVIVE", "DOUBLE TAP"};
+        for (int k = 0; k < 4; k++) {
+            double[] p = find(1.2, 1, 2.5, 60);
+            if (p == null) continue;
+            perk(p[0], p[1], perkCol[k]);
+            String s = perkTxt[k];
+            decal(1.1, .55, p[0], 1.7, p[1] + .52, 0, lab(s, "#111111", "#eeeeee", s.length() > 10 ? 11 : 13), true);
+        }
+        double[] pp = find(1.8, 1.2, 2.5, 60);
+        if (pp != null) {
+            box(pp[0], pp[1], 1.8, 1.2, 2.6, Mat.color(0x4a1a7a).emissive(0x2a0a55, .8));
+            mesh(Prim.sphere(.3, 6, 5), Mat.basic(0xc070ff), pp[0], 2.9, pp[1]);
+            decal(1.6, .5, pp[0], 1.6, pp[1] + .62, 0, lab("PACK-A-PUNCH", "#2a0a40", "#d9a0ff", 11), true);
+            light(0xaa55ff, 1.3, 12, pp[0], 2.5, pp[1] + 1, false);
+        }
+        double[] mb2 = find(1.7, .9, 2.5, 60);
+        if (mb2 != null) {
+            box(mb2[0], mb2[1], 1.7, .9, .8, mCrate);
+            Mat beam = Mat.basic(0x66ccff).alpha(.22);
+            beam.additive = true;
+            mesh(Prim.cyl(.7, .7, 8, 8, true), beam, mb2[0], 4.4, mb2[1]);
+            mb(1.5, .1, .5, mb2[0], .86, mb2[1], Mat.basic(0xffd24a));
+            light(0x55aaff, 1.1, 11, mb2[0], 2.2, mb2[1], false);
+        }
+
+        for (int i = 0, n = 0, want = 12 + rng.nextInt(7); i < 200 && n < want; i++) {
+            double[] p = find(.6, .6, 1, 1);
+            if (p == null) continue;
+            box(p[0], p[1], .6, .6, 2.5 + rng.nextDouble() * 2, mWood);
+            n++;
+        }
+        for (int i = 0, n = 0, want = 8 + rng.nextInt(5); i < 200 && n < want; i++) {
+            double[] p = find(.6, .6, 1.5, 1);
+            if (p == null) continue;
+            dtree(p[0], p[1], rnd(4, 6.5));
+            n++;
+        }
+        for (int i = 0, n = 0, want = 4 + rng.nextInt(4); i < 100 && n < want; i++) {
+            double[] p = find(1, 1, 1, 1);
+            if (p == null) continue;
+            tires(p[0], p[1]);
+            n++;
+        }
+
+        double[] gv = find(14, 9.5, 1, 40);
+        if (gv != null) {
+            for (int r = 0; r < 3; r++) {
+                for (int c = 0; c < 5; c++) box(gv[0] - 5.2 + c * 2.6, gv[1] - 2.8 + r * 2.8, .8, .3, 1 + rng.nextDouble() * .4, mConc);
+            }
+            box(gv[0] + 5.7, gv[1] + 4.5, .2, .2, 2.4, mWood);
+            mb(1.1, .2, .2, gv[0] + 5.7, 2, gv[1] + 4.5, mWood);
+        }
+        double[] bk = find(6.5, 6, 2, 60);
+        if (bk != null) {
+            box(bk[0], bk[1] - 2, 5, .8, .9, mSand);
+            box(bk[0] - 2.4, bk[1], .8, 4, .9, mSand);
+            box(bk[0] + 2.4, bk[1], .8, 4, .9, mSand);
+            box(bk[0], bk[1] - .5, 1.2, 1.2, 1.2, mCrate);
+        }
+        double[] tw = find(4.4, 4.4, 2, 60);
+        if (tw != null) {
+            double tx = tw[0], tz = tw[1];
+            for (int a = -1; a <= 1; a += 2) for (int b2 = -1; b2 <= 1; b2 += 2) box(tx + a * 1.2, tz + b2 * 1.2, .3, .3, 5, mWood);
+            mb(3.8, .25, 3.8, tx, 5.1, tz, mWood);
+            mb(3.8, .9, .12, tx, 5.7, tz + 1.9, mWood);
+            mb(3.8, .9, .12, tx, 5.7, tz - 1.9, mWood);
+        }
+        double[] tk = find(9.4, 3.2, 2, 60);
+        if (tk != null) {
+            box(tk[0], tk[1], 9, 2.6, 3, mRust);
+            mb(7.6, .7, 2.7, tk[0], 2.1, tk[1], mDark);
+            mb(.05, 1.6, 2.2, tk[0] + 4.55, 1.9, tk[1], mDark);
+        }
+        if (rng.nextBoolean()) {
+            boolean hz = rng.nextBoolean();
+            double edge = (rng.nextBoolean() ? -1 : 1) * 40, st = rnd(-28, 8);
+            for (int i = 0; i < 10; i++) {
+                double fx = hz ? st + i * 3 : edge, fz = hz ? edge : st + i * 3;
+                if (spaceFree(fx, fz, .2, .2, .3)) box(fx, fz, hz ? 2.6 : .2, hz ? .2 : 2.6, 1.6, mWood);
             }
         }
 
-        // graffiti and labels
-        decal(3.2, 1.2, -20.5, 2.9, -27.25, PI, grf("NO ESCAPE", 18), true);
-        decal(3.2, 1.2, -19.8, 2.9, -16.75, 0, grf("RUN OR DIE", 18), true);
-        decal(2.6, 1.2, 18.2, 2.6, -27.25, PI, grf("THEY COME", 16), true);
-        decal(3, 1.2, -15.75, 2.8, 25.5, PI / 2, grf("HELP US", 18), true);
-        decal(3.4, 1.2, 18.75, 2.2, 24, -PI / 2, grf("DON'T STOP", 17), true);
-        decal(8, 2, -18, 3.4, -44.85, 0, grf("SURVIVE", 22), true);
-        decal(8, 2, 16, 3.4, -44.85, 0, grf("DEAD ZONE", 20), true);
-        decal(6, 1.6, -16, 3.4, 44.85, PI, grf("NO MERCY", 20), true);
-        decal(6, 1.6, 16, 3.4, 44.85, PI, grf("RUN", 24), true);
-        decal(6, 1.6, -44.85, 3.4, -16, PI / 2, grf("THEY COME", 16), true);
-        decal(6, 1.6, 44.85, 3.4, 16, -PI / 2, grf("HELP US", 20), true);
-        decal(2, .9, -19.75, 1.4, -16.75, 0, chalk("M14  500"), false);
-        decal(2.8, 1.1, -24, 1.5, 28.25, 0, chalk("MP5  1000"), false);
-
+        for (int t : new int[]{-30, -12, 12, 30}) {
+            double side = (t > 0 ? 1 : -1) * 5.5;
+            lamp(t, rz + side);
+            if (roadV) lamp(rx - side, t);
+        }
         for (int a : new int[]{-40, -24, -8, 8, 24, 40}) {
             for (int s = -1; s <= 1; s += 2) {
                 box(a, s * 44.2, 1.6, 1.6, 7, mConc);
@@ -458,87 +663,24 @@ final class World {
                 mesh(Prim.sphere(.18, 5, 4), mBulb, s * 43.2, 6.3, a);
             }
         }
-
-        Object[][] perkLabels = {{-12.0, -25.0, "JUGGER-NOG"}, {15.0, -17.0, "SPEED COLA"}, {-30.0, 15.0, "QUICK REVIVE"}, {29.0, 18.0, "DOUBLE TAP"}};
-        for (Object[] pl : perkLabels) {
-            String s = (String) pl[2];
-            decal(1.1, .55, (Double) pl[0], 1.7, (Double) pl[1] + .52, 0, lab(s, "#111111", "#eeeeee", s.length() > 10 ? 11 : 13), true);
-        }
-
-        // pack-a-punch
-        box(36, -14, 1.8, 1.2, 2.6, Mat.color(0x4a1a7a).emissive(0x2a0a55, .8));
-        mesh(Prim.sphere(.3, 6, 5), Mat.basic(0xc070ff), 36, 2.9, -14);
-        decal(1.6, .5, 36, 1.6, -13.38, 0, lab("PACK-A-PUNCH", "#2a0a40", "#d9a0ff", 11), true);
-        light(0xaa55ff, 1.3, 12, 36, 2.5, -13, false);
-
-        // mystery box with a beam
-        box(8, -15, 1.7, .9, .8, mCrate);
-        Mat beam = Mat.basic(0x66ccff).alpha(.22);
-        beam.additive = true;
-        mesh(Prim.cyl(.7, .7, 8, 8, true), beam, 8, 4.4, -15);
-        mb(1.5, .1, .5, 8, .86, -15, Mat.basic(0xffd24a));
-        light(0x55aaff, 1.1, 11, 8, 2.2, -15, false);
-
-        // furniture and hanging bulbs
-        box(-26.4, -21.5, .6, 3, 2, mWood);
-        box(-15.5, -19.5, 1.2, 2.2, .5, mCloth);
-        box(27.4, -20, .6, 3, 2, mWood);
-        box(17, -25.5, .9, .9, 1.1, mRust);
-        box(-28.5, 19, 2.2, 1.2, .5, mCloth);
-        box(-31.4, 19.5, .6, 3, 2, mWood);
-        box(-24, 23, 2, 1.2, .9, mWood);
-        box(-25.6, 23, .6, .6, .5, mWood);
-        box(-22.4, 23, .6, .6, .5, mWood);
-        box(21.5, 22, 1.8, 1.2, .9, mWood);
-        box(27, 20.5, 3, 1, .6, mCloth);
-        double[][] bulbs = {{-20, 3.3, -22}, {22, 3.3, -22}, {-24, 4.3, 22}, {24, 2.9, 24}};
-        for (double[] b : bulbs) {
-            mesh(Prim.sphere(.18, 5, 4), mBulb, b[0], b[1], b[2]);
-            mesh(Prim.cyl(.01, .01, .8, 3, false), mGun, b[0], b[1] + .5, b[2]);
-        }
-        light(0xffc070, 1, 12, -20, 3.1, -22, true);
-
-        // barricades and wrecks
-        double[][] bar = {{-30, -2.4, .9, 2.6}, {-30, 2.4, .9, 2.6}, {30, -2.4, .9, 2.6}, {30, 2.4, .9, 2.6}, {-2.4, -30, 2.6, .9}, {2.4, -30, 2.6, .9}};
-        for (double[] b : bar) box(b[0], b[1], b[2], b[3], 1, mConc);
-        car(-24, -2.5, false);
-        car(-37, 3, false);
-        car(26, 3, false);
-        car(1, -27, true);
-        car(-1, 24, true);
-        box(0, 34, 9, 2.6, 3, mRust);
-        mb(7.6, .7, 2.7, 0, 2.1, 34, mDark);
-        mb(.05, 1.6, 2.2, 4.55, 1.9, 34, mDark);
-
-        // bunker, tower, graveyard
-        box(-32, -30, 5, .8, .9, mSand);
-        box(-34.4, -28, .8, 4, .9, mSand);
-        box(-29.6, -28, .8, 4, .9, mSand);
-        box(-32, -28.5, 1.2, 1.2, 1.2, mCrate);
-        double[][] legs = {{34.8, -37.2}, {37.2, -37.2}, {34.8, -34.8}, {37.2, -34.8}};
-        for (double[] l : legs) box(l[0], l[1], .3, .3, 5, mWood);
-        mb(3.8, .25, 3.8, 36, 5.1, -36, mWood);
-        mb(3.8, .9, .12, 36, 5.7, -34.1, mWood);
-        mb(3.8, .9, .12, 36, 5.7, -37.9, mWood);
-        for (int r = 0; r < 3; r++) for (int c = 0; c < 5; c++) box(-41 + c * 2.6, -42 + r * 2.8, .8, .3, 1 + rng.nextDouble() * .4, mConc);
-        box(-35.5, -33.3, .2, .2, 2.4, mWood);
-        mb(1.1, .2, .2, -35.5, 2, -33.3, mWood);
-        tires(-8, 20);
-        tires(-7, 21.2);
-        tires(8, -30);
-        tires(36, 32);
-        tires(-36, -12);
-        for (int i = 0, n = 0; i < 300 && n < 10; i++) {
-            double x = rnd(-42, 42), z = rnd(-42, 42);
-            if (Math.abs(x) > 6 && Math.abs(z) > 6 && freeAt(x, z)) {
-                dtree(x, z, rnd(4, 6.5));
-                n++;
+        for (int wl = 0; wl < 4; wl++) {
+            for (int k = 0; k < 2; k++) {
+                double t = (rng.nextBoolean() ? -1 : 1) * rnd(12, 32);
+                String s = TAGS[rng.nextInt(TAGS.length)];
+                Tex.Painter gp = grf(s, 18);
+                if (wl == 0) decal(6, 1.6, t, 3.4, -44.85, 0, gp, true);
+                else if (wl == 1) decal(6, 1.6, t, 3.4, 44.85, PI, gp, true);
+                else if (wl == 2) decal(6, 1.6, -44.85, 3.4, t, PI / 2, gp, true);
+                else decal(6, 1.6, 44.85, 3.4, t, -PI / 2, gp, true);
             }
         }
-        double[][] bodies = {{-18, -24.5}, {24, -20.5}, {-26, 24}, {2, 5}, {-8, -2}, {20, 8}};
-        for (double[] b : bodies) corpse(b[0], b[1], rnd(0, 6.28));
 
-        // ground clutter
+        for (int i = 0, n = 0, want = 5 + rng.nextInt(5); i < 100 && n < want; i++) {
+            double x = rnd(-40, 40), z = rnd(-40, 40);
+            if (Math.abs(x) < 3 && Math.abs(z) < 3) continue;
+            corpse(x, z, rnd(0, 6.28));
+            n++;
+        }
         for (int i = 0, n = 0; i < 200 && n < 16; i++) {
             double x = rnd(-42, 42), z = rnd(-42, 42);
             if (freeAt(x, z)) {
@@ -566,11 +708,6 @@ final class World {
                 mbr(rnd(.2, .5), rnd(.15, .4), rnd(.2, .5), x, .12, z, mConc, rnd(-.4, .4), rnd(0, 6.28), rnd(-.4, .4));
                 n++;
             }
-        }
-        double[][] sl = {{-14, 4.5}, {14, -4.5}, {-4.5, -26}, {4.5, 14}, {-26, 4.5}, {26, -4.5}, {4.5, 26}, {-4.5, -14}};
-        for (double[] p : sl) {
-            mesh(Prim.cyl(.07, .07, 4.2, 5, false), mGun, p[0], 2.1, p[1]);
-            mesh(Prim.sphere(.18, 5, 4), mBulb, p[0], 4.3, p[1]);
         }
     }
 

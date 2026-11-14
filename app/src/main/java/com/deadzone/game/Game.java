@@ -87,7 +87,14 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
     final Ui ui;
     final Hud hud = new Hud();
-    final World world = new World();
+    volatile World world;
+    WorldStore store;
+    long worldSeed;
+    String worldId;
+    int startWave;
+    private long pendSeed;
+    private String pendId;
+    private int pendWave;
     final Gun gun = new Gun();
     final Sfx sfx = new Sfx();
     final Net net;
@@ -154,6 +161,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     private long last;
 
     Game(Ui ui, Settings set) {
+        worldSeed = Math.abs(new java.util.Random().nextLong() % 1000000000L);
+        world = new World(worldSeed);
         this.ui = ui;
         this.set = set;
         this.net = new Net(this);
@@ -406,16 +415,38 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         return sb.toString();
     }
 
-    void startSolo() {
+    private void setWorld(long seed) {
+        if (world != null && worldSeed == seed) return;
+        worldSeed = seed;
+        world = new World(seed);
+        nav = null;
+        navF.clear();
+    }
+
+    private void saveProgress() {
+        if (role != CLIENT && store != null && worldId != null) store.update(worldId, wave, kills);
+    }
+
+    void startSolo(long seed, String id, int fromWave) {
         net.close();
         role = SOLO;
         myIdx = 0;
         netId = "host";
         hud.room = "";
+        worldId = id;
+        startWave = fromWave;
+        setWorld(seed);
         startGame(false);
     }
 
-    void startHost() {
+    void startHost(long seed, String id, int fromWave) {
+        pendSeed = seed;
+        pendId = id;
+        pendWave = fromWave;
+        hostNow();
+    }
+
+    private void hostNow() {
         roomCode = newCode();
         net.host(roomCode);
     }
@@ -431,6 +462,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     }
 
     void again() {
+        startWave = 0;
         ui.hideOver();
         bc(Net.obj("t", "restart"));
         reset(false);
@@ -469,11 +501,15 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         resetPhysics();
         state = PLAY;
         hud.playing = true;
-        if (!cli) nextWave();
+        if (!cli) {
+            wave = Math.max(0, startWave - 1);
+            nextWave();
+        }
         updRoom();
     }
 
     private void showOver() {
+        saveProgress();
         state = OVER;
         hud.playing = false;
         mvx = mvy = 0;
@@ -506,6 +542,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     private void onWave(int w) {
         double a = bhSize(w - 1), b = bhSize(w);
         wave = w;
+        saveProgress();
         ban(L.t("h_wave") + " " + wave);
         if (a < 1.2 && b >= 1.2) ban("THE VOID GROWS  -  RUNNERS");
         else if (a < 1.9 && b >= 1.9) ban("THE VOID GROWS  -  BRUTES");
@@ -1488,6 +1525,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     }
 
     void pause() {
+        saveProgress();
         paused = true;
         mvx = mvy = 0;
         fireIn = false;
@@ -1495,6 +1533,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     }
 
     void toMenu() {
+        saveProgress();
         net.close();
         role = SOLO;
         state = MENU;
@@ -1622,6 +1661,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 role = CLIENT;
                 myIdx = m.optInt("idx");
                 hud.room = "";
+                worldId = null;
+                if (m.has("seed")) setWorld(m.optLong("seed"));
                 startGame(true);
                 wave = m.optInt("wave");
                 kills = m.optInt("kills");
@@ -1683,6 +1724,9 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 myIdx = 0;
                 ui.status("");
                 pl.clear();
+                worldId = pendId;
+                startWave = pendWave;
+                setWorld(pendSeed);
                 startGame(false);
             }
         });
@@ -1693,7 +1737,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         post(new Runnable() {
             @Override
             public void run() {
-                startHost();
+                hostNow();
             }
         });
     }
@@ -1712,7 +1756,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 q.id = id;
                 q.idx = idx;
                 pl.put(id, q);
-                sendTo(id, Net.obj("t", "welcome", "idx", idx, "wave", wave, "kills", kills));
+                sendTo(id, Net.obj("t", "welcome", "idx", idx, "wave", wave, "kills", kills, "seed", worldSeed));
                 updRoom();
             }
         });

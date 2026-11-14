@@ -140,12 +140,12 @@ final class Overlay extends View {
         p.setTextAlign(Paint.Align.RIGHT);
         p.setTextSize(22 * d);
         p.setColor(0xCCdddddd);
-        c.drawText(hud.mag + " / " + hud.res, w - 16 * d, 32 * d, p);
+        c.drawText(hud.mag + " / " + hud.res, w - 62 * d, 32 * d, p);
         String note = hud.reloading ? L.t("h_rel") : (hud.mag == 0 && hud.res == 0 ? L.t("h_noammo") : "");
         if (note.length() > 0) {
             p.setTextSize(14 * d);
             p.setColor(0xFFcc3333);
-            c.drawText(note, w - 16 * d, 52 * d, p);
+            c.drawText(note, w - 62 * d, 52 * d, p);
         }
 
         p.setTextAlign(Paint.Align.CENTER);
@@ -175,10 +175,10 @@ final class Overlay extends View {
         p.setColor(0xB3ffffff);
         c.drawCircle(w / 2f, h / 2f, 3 * d, p);
         p.setColor(0x55ffffff);
-        c.drawCircle(w / 2f, 66 * d, 14 * d, p);
+        c.drawCircle(w - 30 * d, 30 * d, 14 * d, p);
         p.setStyle(Paint.Style.FILL);
         p.setTextSize(13 * d);
-        c.drawText("II", w / 2f, 66 * d + 4.5f * d, p);
+        c.drawText("II", w - 30 * d, 30 * d + 4.5f * d, p);
 
         if (hud.banT > 0 && hud.banner != null) {
             p.setTextSize(30 * d);
@@ -263,7 +263,7 @@ final class Overlay extends View {
 
     private void down(int id, float x, float y) {
         float w = getWidth();
-        if (dist(x, y, w / 2f, 66 * d) <= 22 * d) {
+        if (dist(x, y, w - 30 * d, 30 * d) <= 24 * d) {
             if (onPause != null) onPause.run();
             return;
         }

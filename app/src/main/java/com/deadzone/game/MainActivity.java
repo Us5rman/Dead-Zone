@@ -28,7 +28,11 @@ public class MainActivity extends Activity implements Game.Ui {
     private Game game;
     private GLSurfaceView gl;
     private Overlay overlay;
-    private View menu, settingsView, over, editBar;
+    private View menu, settingsView, over, editBar, worldsView;
+    private LinearLayout worldsCol;
+    private WorldStore store;
+    private boolean worldsHost;
+    private EditText seedIn;
     private TextView status, overText;
     private Button again, resume;
     private EditText code;
@@ -49,7 +53,9 @@ public class MainActivity extends Activity implements Game.Ui {
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         }
 
+        store = new WorldStore(this);
         game = new Game(this, set);
+        game.store = store;
         gl = new GLSurfaceView(this);
         gl.setEGLContextClientVersion(2);
         gl.setRenderer(game);
@@ -74,14 +80,17 @@ public class MainActivity extends Activity implements Game.Ui {
         root.addView(gl, new FrameLayout.LayoutParams(-1, -1));
         root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
         menu = buildMenu();
+        worldsView = buildWorlds();
         settingsView = buildSettings();
         over = buildOver();
         editBar = buildEditBar();
         root.addView(menu, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(worldsView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(settingsView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(over, new FrameLayout.LayoutParams(-1, -1));
         root.addView(editBar, new FrameLayout.LayoutParams(-1, -2));
         settingsView.setVisibility(View.GONE);
+        worldsView.setVisibility(View.GONE);
         over.setVisibility(View.GONE);
         editBar.setVisibility(View.GONE);
         setContentView(root);
@@ -163,26 +172,17 @@ public class MainActivity extends Activity implements Game.Ui {
     /* ---- main menu ---- */
 
     private View buildMenu() {
-        LinearLayout left = new LinearLayout(this);
-        left.setOrientation(LinearLayout.VERTICAL);
-        left.setGravity(Gravity.CENTER_HORIZONTAL);
-        TextView title = text("DEAD ZONE", 34, 0xFFcc2222, true);
-        title.setGravity(Gravity.CENTER);
-        left.addView(title);
-        left.addView(para(L.t("intro")));
-        left.addView(para(String.format(L.t("help"), L.t("b_fire"), L.t("b_jump"), L.t("b_dive"), L.t("b_run"))));
-        left.addView(para(String.format(L.t("help2"), L.t("b_slide"), L.t("b_jump"))));
-        left.addView(para(L.t("multi")));
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setGravity(Gravity.TOP | Gravity.START);
+        col.setPadding(dp(14), dp(10), dp(14), dp(10));
+        col.addView(text("DEAD ZONE", 26, 0xFFcc2222, true));
 
-        LinearLayout right = new LinearLayout(this);
-        right.setOrientation(LinearLayout.VERTICAL);
-        right.setGravity(Gravity.CENTER);
-
-        resume = button(L.t("resume"), 16);
-        Button solo = button(L.t("start"), 16);
-        Button host = button(L.t("host"), 16);
-        Button join = button(L.t("join"), 16);
-        Button sett = button(L.t("settings"), 16);
+        resume = button(L.t("resume"), 15);
+        Button solo = button(L.t("start"), 15);
+        Button host = button(L.t("host"), 15);
+        Button join = button(L.t("join"), 15);
+        Button sett = button(L.t("settings"), 15);
         resume.setVisibility(View.GONE);
         code = new EditText(this);
         code.setHint(L.t("code"));
@@ -195,23 +195,22 @@ public class MainActivity extends Activity implements Game.Ui {
         code.setFilters(new InputFilter[]{new InputFilter.AllCaps(), new InputFilter.LengthFilter(4)});
         status = text("", 13, 0xFFcccc88, false);
         status.setTextDirection(L.rtl() ? View.TEXT_DIRECTION_RTL : View.TEXT_DIRECTION_LTR);
-        status.setGravity(Gravity.CENTER);
 
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, -2);
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(230), -2);
         bp.topMargin = dp(8);
-        right.addView(resume, bp);
-        right.addView(solo, bp);
-        right.addView(host, bp);
+        col.addView(resume, bp);
+        col.addView(solo, bp);
+        col.addView(host, bp);
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER);
-        row.addView(code, new LinearLayout.LayoutParams(dp(100), -2));
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(code, new LinearLayout.LayoutParams(dp(90), -2));
         LinearLayout.LayoutParams jp = new LinearLayout.LayoutParams(0, -2, 1f);
         jp.leftMargin = dp(8);
         row.addView(join, jp);
-        right.addView(row, bp);
-        right.addView(sett, bp);
-        right.addView(status, bp);
+        col.addView(row, bp);
+        col.addView(sett, bp);
+        col.addView(status, bp);
 
         resume.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -228,23 +227,13 @@ public class MainActivity extends Activity implements Game.Ui {
         solo.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                onGl(new Runnable() {
-                    @Override
-                    public void run() {
-                        game.startSolo();
-                    }
-                });
+                openWorlds(false);
             }
         });
         host.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                onGl(new Runnable() {
-                    @Override
-                    public void run() {
-                        game.startHost();
-                    }
-                });
+                openWorlds(true);
             }
         });
         join.setOnClickListener(new View.OnClickListener() {
@@ -269,33 +258,141 @@ public class MainActivity extends Activity implements Game.Ui {
             }
         });
 
-        LinearLayout cols = new LinearLayout(this);
-        cols.setOrientation(LinearLayout.HORIZONTAL);
-        cols.setGravity(Gravity.CENTER_VERTICAL);
-        cols.setPadding(dp(16), dp(10), dp(16), dp(10));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
-        lp.rightMargin = dp(12);
-        cols.addView(left, lp);
-        cols.addView(right, new LinearLayout.LayoutParams(0, -2, 1f));
-
         ScrollView sv = new ScrollView(this);
-        sv.setFillViewport(true);
-        sv.setBackgroundColor(0xE6000000);
-        sv.addView(cols, new FrameLayout.LayoutParams(-1, -1));
+        sv.setBackgroundColor(0xFF000000);
+        sv.addView(col, new FrameLayout.LayoutParams(-1, -2));
         return sv;
+    }
+
+    /* ---- worlds ---- */
+
+    private View buildWorlds() {
+        worldsCol = new LinearLayout(this);
+        worldsCol.setOrientation(LinearLayout.VERTICAL);
+        worldsCol.setGravity(Gravity.TOP | Gravity.START);
+        worldsCol.setPadding(dp(14), dp(10), dp(14), dp(10));
+        ScrollView sv = new ScrollView(this);
+        sv.setBackgroundColor(0xFF000000);
+        sv.addView(worldsCol, new FrameLayout.LayoutParams(-1, -2));
+        return sv;
+    }
+
+    private void openWorlds(boolean host) {
+        worldsHost = host;
+        fillWorlds();
+        menu.setVisibility(View.GONE);
+        worldsView.setVisibility(View.VISIBLE);
+    }
+
+    private void playWorld(final WorldStore.Info inf) {
+        worldsView.setVisibility(View.GONE);
+        if (worldsHost) menu.setVisibility(View.VISIBLE);
+        final boolean host = worldsHost;
+        onGl(new Runnable() {
+            @Override
+            public void run() {
+                if (host) game.startHost(inf.seed, inf.id, inf.wave);
+                else game.startSolo(inf.seed, inf.id, inf.wave);
+            }
+        });
+    }
+
+    private void fillWorlds() {
+        worldsCol.removeAllViews();
+        worldsCol.addView(text(L.t("w_title"), 26, 0xFFcc2222, true));
+
+        seedIn = new EditText(this);
+        seedIn.setHint(L.t("w_seed"));
+        seedIn.setHintTextColor(0xFF777777);
+        seedIn.setTextColor(Color.WHITE);
+        seedIn.setTextSize(16);
+        seedIn.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+        seedIn.setSingleLine(true);
+        seedIn.setFilters(new InputFilter[]{new InputFilter.LengthFilter(24)});
+        Button create = button(L.t("w_create"), 15);
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(300), -2);
+        bp.topMargin = dp(8);
+        worldsCol.addView(seedIn, bp);
+        worldsCol.addView(create, bp);
+        create.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                InputMethodManager im = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (im != null) im.hideSoftInputFromWindow(seedIn.getWindowToken(), 0);
+                playWorld(store.add(WorldStore.parseSeed(seedIn.getText().toString())));
+            }
+        });
+
+        java.util.ArrayList<WorldStore.Info> list = store.list();
+        if (list.isEmpty()) {
+            TextView t = text(L.t("w_empty"), 13, 0xFF888888, false);
+            t.setPadding(0, dp(14), 0, 0);
+            worldsCol.addView(t);
+        }
+        for (final WorldStore.Info inf : list) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, dp(10), 0, 0);
+            LinearLayout info = new LinearLayout(this);
+            info.setOrientation(LinearLayout.VERTICAL);
+            info.addView(text(inf.name, 16, Color.WHITE, true));
+            info.addView(text(String.format(L.t("w_info"), Long.toString(inf.seed), inf.wave, inf.kills), 12, 0xFFaaaaaa, false));
+            Button play = button(L.t("w_play"), 13);
+            Button del = button(L.t("w_del"), 13);
+            row.addView(info, new LinearLayout.LayoutParams(dp(200), -2));
+            LinearLayout.LayoutParams pb = new LinearLayout.LayoutParams(dp(90), -2);
+            pb.leftMargin = dp(8);
+            row.addView(play, pb);
+            row.addView(del, pb);
+            worldsCol.addView(row);
+            play.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    playWorld(inf);
+                }
+            });
+            del.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    store.delete(inf.id);
+                    fillWorlds();
+                }
+            });
+        }
+
+        Button back = button(L.t("s_back"), 15);
+        LinearLayout.LayoutParams kp = new LinearLayout.LayoutParams(dp(300), -2);
+        kp.topMargin = dp(16);
+        worldsCol.addView(back, kp);
+        back.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                worldsView.setVisibility(View.GONE);
+                menu.setVisibility(View.VISIBLE);
+            }
+        });
     }
 
     /* ---- settings ---- */
 
-    private Switch toggle(String label, boolean on, CompoundButton.OnCheckedChangeListener l) {
-        Switch s = new Switch(this);
-        s.setText(label);
-        s.setTextColor(Color.WHITE);
-        s.setTextSize(15);
-        s.setChecked(on);
-        s.setPadding(dp(4), dp(8), dp(4), dp(8));
-        s.setOnCheckedChangeListener(l);
-        return s;
+    private View toggle(String label, boolean on, final CompoundButton.OnCheckedChangeListener l) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(4), dp(8), dp(4), dp(8));
+        TextView t = text(label, 15, Color.WHITE, false);
+        t.setTextDirection(L.rtl() ? View.TEXT_DIRECTION_RTL : View.TEXT_DIRECTION_LTR);
+        row.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
+        BlockSwitch s = new BlockSwitch(this, on);
+        s.setListener(new BlockSwitch.Listener() {
+            @Override
+            public void changed(boolean now) {
+                l.onCheckedChanged(null, now);
+            }
+        });
+        row.addView(s);
+        return row;
     }
 
     private View buildSettings() {
@@ -397,7 +494,7 @@ public class MainActivity extends Activity implements Game.Ui {
         });
 
         ScrollView sv = new ScrollView(this);
-        sv.setBackgroundColor(0xF0000000);
+        sv.setBackgroundColor(0xFF000000);
         sv.addView(col, new FrameLayout.LayoutParams(-1, -2));
         return sv;
     }
@@ -513,7 +610,9 @@ public class MainActivity extends Activity implements Game.Ui {
             @Override
             public void run() {
                 resume.setVisibility(canResume ? View.VISIBLE : View.GONE);
+                menu.setBackgroundColor(canResume ? 0xF2000000 : 0xFF000000);
                 settingsView.setVisibility(View.GONE);
+                worldsView.setVisibility(View.GONE);
                 menu.setVisibility(View.VISIBLE);
             }
         });
@@ -602,7 +701,22 @@ public class MainActivity extends Activity implements Game.Ui {
 
     @Override
     public void onBackPressed() {
-        finish();
+        if (editBar.getVisibility() == View.VISIBLE || over.getVisibility() == View.VISIBLE) return;
+        if (worldsView.getVisibility() == View.VISIBLE) {
+            worldsView.setVisibility(View.GONE);
+            menu.setVisibility(View.VISIBLE);
+            return;
+        }
+        if (settingsView.getVisibility() == View.VISIBLE) {
+            settingsView.setVisibility(View.GONE);
+            menu.setVisibility(View.VISIBLE);
+            return;
+        }
+        if (menu.getVisibility() == View.VISIBLE) {
+            if (resume.getVisibility() == View.VISIBLE) resume.performClick();
+            return;
+        }
+        if (game.hud.playing && overlay.onPause != null) overlay.onPause.run();
     }
 
     @Override
