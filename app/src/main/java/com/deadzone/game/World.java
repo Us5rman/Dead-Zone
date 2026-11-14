@@ -27,7 +27,6 @@ final class World {
     final ArrayList<Light> lights = new ArrayList<>();
     final ArrayList<Batch> solid = new ArrayList<>();
     final ArrayList<Batch> blend = new ArrayList<>();
-    final Geo stars;
 
     final Random rng = new Random();
     private final LinkedHashMap<Mat, FloatList> acc = new LinkedHashMap<>();
@@ -45,15 +44,6 @@ final class World {
             b.geo = new Geo(e.getValue().toArray());
             (b.mat.blend ? blend : solid).add(b);
         }
-        FloatList s = new FloatList();
-        for (int i = 0; i < 250; i++) {
-            double a = rnd(0, 6.28), el = rnd(.15, 1.4), r = 80;
-            s.add((float) (Math.cos(a) * Math.cos(el) * r));
-            s.add((float) (Math.sin(el) * r));
-            s.add((float) (Math.sin(a) * Math.cos(el) * r));
-            for (int k = 0; k < 5; k++) s.add(0);
-        }
-        stars = new Geo(s.toArray());
     }
 
     double rnd(double a, double b) {
@@ -362,9 +352,6 @@ final class World {
         box(-46, 0, 2, 96, 6, mBrick);
         box(46, 0, 2, 96, 6, mBrick);
         for (int r = 0; r < 2; r++) mesh(Prim.plane(92, 8), mRd, 0, .03, 0, -PI / 2, 0, r == 1 ? PI / 2 : 0);
-        Mat moon = Mat.basic(0xdde6ff);
-        moon.noFog = true;
-        mesh(Prim.sphere(3, 8, 6), moon, -30, 32, -50);
 
         house(-20, -22, 14, 10, 4, g(d(3, 1.6, 1), d(10, 1.6, 1)), g(d(4, 2.6), d(10, 1.6, 1)), g(d(5, 1.6, 1)), g(d(5, 2.6)));
         house(22, -22, 12, 10, 4, g(d(6, 2.6)), g(d(3, 3.2), d(8, 1.6, 1)), g(d(5, 2.6)), g(d(4, 1.6, 1)));

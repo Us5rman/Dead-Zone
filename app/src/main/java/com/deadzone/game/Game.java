@@ -120,7 +120,6 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
     private final Node bloodNode = new Node();
     private final Mat mBrass = Mat.color(0xc8a040).emissive(0x3a2c08, 1);
-    private final Mat starMat = Mat.basic(0xffffff);
     private int vw = 1, vh = 1;
     private long last;
 
@@ -128,7 +127,6 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         this.ui = ui;
         this.net = new Net(this);
         bloodNode.parts.add(Node.box(.08, .08, .08, 0, 0, 0, Mat.basic(0x8a0808)));
-        starMat.noFog = true;
     }
 
     private void post(Runnable r) {
@@ -151,6 +149,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     @Override
     public void onSurfaceCreated(GL10 gl, EGLConfig config) {
         Gfx.init();
+        Sky.init();
         last = 0;
     }
 
@@ -218,11 +217,10 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         GLES20.glClearColor(bg[0], bg[1], bg[2], 1f);
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
 
+        Gfx.flash = (float) Math.max(0, Math.min(1, (ambI - .9) / 1.5));
         Gfx.frame(vp, new float[]{(float) cx, (float) cy, (float) cz}, fwd, amb, plPos, plCol, plRange, n);
 
         world.draw(false);
-        Gfx.useMat(starMat);
-        Gfx.drawPoints(world.stars, Xf.make(cx, cy, cz, 0, 0, 0, 1));
 
         for (Zombie z : zs) {
             z.o.px = z.x;
@@ -240,7 +238,10 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         for (Debris d : deb) d.n.draw(Xf.ID, false);
         gun.gun.draw(cw, false);
 
+        float[] camPos = {(float) cx, (float) cy, (float) cz};
+        Sky.drawSky(vp, camPos);
         world.draw(true);
+        Sky.drawRain(vp, camPos);
         gun.gun.draw(cw, true);
     }
 
