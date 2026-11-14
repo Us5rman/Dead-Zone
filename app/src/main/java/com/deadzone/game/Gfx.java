@@ -4,10 +4,16 @@ import android.opengl.GLES20;
 
 final class Gfx {
     static int gen = 0;
+    static float time, flash, bh = .7f;
+    static boolean reflOn, reflPass;
+    static final float[] FOG = {.038f, .055f, .082f};
+    static final float FOG_DEN = .055f;
+    static final float[] boltDir = {0f, 0f, -1f};
+    private static final long T0 = System.nanoTime();
     static int aPos, aNor, aUv;
 
     private static int prog;
-    private static int uVP, uModel, uTex, uHasTex, uColor, uEmis, uUnlit, uFogOn, uPS;
+    private static int uVP, uModel, uTex, uHasTex, uColor, uEmis, uUnlit, uFogOn, uPS, uWet, uPud, uRefPass, uRes, uTimeU, uNoise, uRefl, uRefPl, uThr, uGlass, uMirPl, uMirOn, uMir, uFlashU, uBoltDir;
     private static int uAmb, uDirV, uDirCol, uCam, uFogCol, uFogDen;
     private static int uNumPl, uPlPos, uPlCol, uPlRange;
     private static int uSpPos, uSpDir, uSpCol, uSpCos0, uSpCos1, uSpRange;
@@ -31,68 +37,140 @@ final class Gfx {
             "  gl_PointSize = uPS;\n" +
             "}\n";
 
-    private static final String FRAG =
-            "#ifdef GL_FRAGMENT_PRECISION_HIGH\n" +
-            "precision highp float;\n" +
-            "#else\n" +
-            "precision mediump float;\n" +
-            "#endif\n" +
-            "varying vec3 vWorld;\n" +
-            "varying vec3 vNor;\n" +
-            "varying vec2 vUv;\n" +
-            "uniform sampler2D uTex;\n" +
-            "uniform float uHasTex;\n" +
-            "uniform vec4 uColor;\n" +
-            "uniform vec3 uEmis;\n" +
-            "uniform float uUnlit;\n" +
-            "uniform float uFogOn;\n" +
-            "uniform vec3 uAmb;\n" +
-            "uniform vec3 uDirV;\n" +
-            "uniform vec3 uDirCol;\n" +
-            "uniform vec3 uCam;\n" +
-            "uniform vec3 uFogCol;\n" +
-            "uniform float uFogDen;\n" +
-            "uniform float uNumPl;\n" +
-            "uniform vec3 uPlPos[8];\n" +
-            "uniform vec3 uPlCol[8];\n" +
-            "uniform float uPlRange[8];\n" +
-            "uniform vec3 uSpPos;\n" +
-            "uniform vec3 uSpDir;\n" +
-            "uniform vec3 uSpCol;\n" +
-            "uniform float uSpCos0;\n" +
-            "uniform float uSpCos1;\n" +
-            "uniform float uSpRange;\n" +
-            "void main() {\n" +
-            "  vec4 base = uColor;\n" +
-            "  if (uHasTex > 0.5) base *= texture2D(uTex, vUv);\n" +
-            "  vec3 col;\n" +
-            "  if (uUnlit > 0.5) {\n" +
-            "    col = base.rgb;\n" +
-            "  } else {\n" +
-            "    vec3 n = normalize(vNor);\n" +
-            "    vec3 light = uAmb + uDirCol * max(dot(n, uDirV), 0.0);\n" +
-            "    for (int i = 0; i < 8; i++) {\n" +
-            "      if (float(i) >= uNumPl) break;\n" +
-            "      vec3 d = uPlPos[i] - vWorld;\n" +
-            "      float dist = max(length(d), 0.001);\n" +
-            "      float at = clamp(1.0 - dist / uPlRange[i], 0.0, 1.0);\n" +
-            "      light += uPlCol[i] * max(dot(n, d / dist), 0.0) * at;\n" +
-            "    }\n" +
-            "    vec3 sd = uSpPos - vWorld;\n" +
-            "    float sl = max(length(sd), 0.001);\n" +
-            "    vec3 L = sd / sl;\n" +
-            "    float cs = dot(-L, uSpDir);\n" +
-            "    float sa = smoothstep(uSpCos0, uSpCos1, cs) * clamp(1.0 - sl / uSpRange, 0.0, 1.0);\n" +
-            "    light += uSpCol * max(dot(n, L), 0.0) * sa;\n" +
-            "    col = base.rgb * light + uEmis;\n" +
-            "  }\n" +
-            "  if (uFogOn > 0.5) {\n" +
-            "    float dd = length(vWorld - uCam);\n" +
-            "    float f = 1.0 - exp(-uFogDen * uFogDen * dd * dd);\n" +
-            "    col = mix(col, uFogCol, clamp(f, 0.0, 1.0));\n" +
-            "  }\n" +
-            "  gl_FragColor = vec4(col, base.a);\n" +
-            "}\n";
+    private static final String FRAG = """
+            #ifdef GL_FRAGMENT_PRECISION_HIGH
+            precision highp float;
+            #else
+            precision mediump float;
+            #endif
+            varying vec3 vWorld;
+            varying vec3 vNor;
+            varying vec2 vUv;
+            uniform sampler2D uTex;
+            uniform float uHasTex;
+            uniform vec4 uColor;
+            uniform vec3 uEmis;
+            uniform float uUnlit;
+            uniform float uFogOn;
+            uniform vec3 uAmb;
+            uniform vec3 uDirV;
+            uniform vec3 uDirCol;
+            uniform vec3 uCam;
+            uniform vec3 uFogCol;
+            uniform float uFogDen;
+            uniform float uWet;
+            uniform float uPud;
+            uniform vec4 uRefPl;
+            uniform float uThr;
+            uniform float uGlass;
+            uniform vec4 uMirPl;
+            uniform float uMirOn;
+            uniform sampler2D uMir;
+            uniform float uFlash;
+            uniform vec3 uBoltDir;
+            uniform float uRefPass;
+            uniform float uTime;
+            uniform vec2 uRes;
+            uniform sampler2D uNoise;
+            uniform sampler2D uRefl;
+            uniform float uNumPl;
+            uniform vec3 uPlPos[8];
+            uniform vec3 uPlCol[8];
+            uniform float uPlRange[8];
+            uniform vec3 uSpPos;
+            uniform vec3 uSpDir;
+            uniform vec3 uSpCol;
+            uniform float uSpCos0;
+            uniform float uSpCos1;
+            uniform float uSpRange;
+            float vn(vec2 p) {
+              vec2 i = floor(p);
+              vec2 f = fract(p);
+              f = f * f * (3.0 - 2.0 * f);
+              return texture2D(uNoise, (i + f + 0.5) * 0.0078125).r;
+            }
+            void main() {
+              if (uRefPass > 0.5 && dot(vWorld, uRefPl.xyz) - uRefPl.w < uThr) discard;
+              vec4 base = uColor;
+              if (uHasTex > 0.5) base *= texture2D(uTex, vUv);
+              vec3 col;
+              float alpha = base.a;
+              vec3 scat = vec3(0.0);
+              vec3 rcol = vec3(0.0);
+              float pmix = 0.0;
+              if (uUnlit > 0.5) {
+                col = base.rgb;
+              } else {
+                vec3 n = normalize(vNor);
+                vec3 v = normalize(uCam - vWorld);
+                float up = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
+                float pud = 0.0;
+                if (uPud > 0.5) {
+                  vec2 pp = vWorld.xz * 0.085;
+                  pud = smoothstep(0.50, 0.58, vn(pp) * 0.65 + vn(pp * 2.7 + 5.0) * 0.35);
+                }
+                float gloss = max(uWet * (0.35 + 0.65 * up), pud);
+                vec3 albedo = base.rgb * mix(1.0, 0.8, uWet * up) * mix(1.0, 0.55, pud);
+                vec3 light = uAmb * mix(0.75, 1.15, up) + uDirCol * max(dot(n, uDirV), 0.0);
+                vec3 spec = uDirCol * (2.0 * gloss * pow(max(dot(n, normalize(uDirV + v)), 0.0), 36.0));
+                for (int i = 0; i < 8; i++) {
+                  if (float(i) >= uNumPl) break;
+                  vec3 d = uPlPos[i] - vWorld;
+                  float dist = max(length(d), 0.001);
+                  float at = clamp(1.0 - dist / uPlRange[i], 0.0, 1.0);
+                  light += uPlCol[i] * max(dot(n, d / dist), 0.0) * at;
+                  scat += uPlCol[i] * at * at;
+                }
+                vec3 sd = uSpPos - vWorld;
+                float sl = max(length(sd), 0.001);
+                vec3 L = sd / sl;
+                float cs = dot(-L, uSpDir);
+                float sa = smoothstep(uSpCos0, uSpCos1, cs) * clamp(1.0 - sl / uSpRange, 0.0, 1.0);
+                light += uSpCol * max(dot(n, L), 0.0) * sa;
+                spec += uSpCol * (0.6 * gloss * sa * pow(max(dot(n, normalize(L + v)), 0.0), 28.0));
+                spec += uDirCol * (4.0 * pud * pow(max(dot(n, normalize(uDirV + v)), 0.0), 240.0));
+                col = albedo * light + uEmis + spec;
+                if (pud > 0.001) {
+                  vec2 gg = vWorld.xz * 2.6;
+                  vec4 rr = texture2D(uNoise, (floor(gg) + 0.5) * 0.0078125);
+                  vec2 ff = fract(gg) - 0.5 - (rr.gb - 0.5) * 0.5;
+                  float ph = fract(uTime * 0.7 + rr.r * 9.0);
+                  float dd = length(ff);
+                  float ring = exp(-pow((dd - ph * 0.5) * 16.0, 2.0)) * (1.0 - ph) * step(0.4, rr.a);
+                  vec2 suv = gl_FragCoord.xy / uRes + ff / max(dd, 0.001) * ring * 0.012;
+                  float fr = 0.3 + 0.7 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 2.0);
+                  rcol = texture2D(uRefl, suv).rgb + ring * 0.1;
+                  pmix = pud * clamp(0.3 + 0.7 * fr, 0.0, 1.0) * 0.9;
+                }
+              }
+              vec3 tm = col * 1.25;
+              tm = (tm * (2.51 * tm + 0.03)) / (tm * (2.43 * tm + 0.59) + 0.14);
+              col = mix(col, tm, 0.7);
+              col = mix(col, rcol, pmix);
+              if (uGlass > 0.5) {
+                float onp = step(abs(dot(vWorld, uMirPl.xyz) - uMirPl.w), 0.12) * uMirOn * (1.0 - step(0.5, uRefPass));
+                vec3 nn = normalize(vNor);
+                vec3 vv = normalize(uCam - vWorld);
+                float fr = pow(1.0 - clamp(abs(dot(nn, vv)), 0.0, 1.0), 2.0);
+                vec3 rc = texture2D(uMir, gl_FragCoord.xy / uRes).rgb;
+                float amt = (uGlass > 1.5 ? 0.92 : 0.25 + 0.55 * fr) * onp;
+                col = mix(col, rc, amt);
+                alpha = max(alpha, amt * 0.9);
+              }
+              if (uFogOn > 0.5) {
+                vec3 vd = vWorld - uCam;
+                float dd = length(vd);
+                float hm = max((uCam.y + vWorld.y) * 0.5, 0.0);
+                float fpatch = vn(vWorld.xz * 0.045 + vec2(uTime * 0.025, uTime * 0.015));
+                float den = uFogDen * (0.65 + 0.9 * fpatch) * exp(-hm * 0.11);
+                float f = 1.0 - exp(-den * den * dd * dd);
+                float facing = max(dot(vd / max(dd, 0.001), uBoltDir), 0.0);
+                vec3 fc = uFogCol + vec3(0.30, 0.36, 0.60) * uFlash * (0.25 + 0.75 * facing * facing) + scat * 0.35;
+                col = mix(col * exp(-dd * 0.012), fc, clamp(f, 0.0, 1.0));
+              }
+              gl_FragColor = vec4(col, alpha);
+            }
+            """;
 
     private Gfx() {
     }
@@ -133,6 +211,21 @@ final class Gfx {
         uUnlit = loc("uUnlit");
         uFogOn = loc("uFogOn");
         uPS = loc("uPS");
+        uWet = loc("uWet");
+        uPud = loc("uPud");
+        uRefPass = loc("uRefPass");
+        uRes = loc("uRes");
+        uTimeU = loc("uTime");
+        uNoise = loc("uNoise");
+        uRefl = loc("uRefl");
+        uRefPl = loc("uRefPl");
+        uThr = loc("uThr");
+        uGlass = loc("uGlass");
+        uMirPl = loc("uMirPl");
+        uMirOn = loc("uMirOn");
+        uMir = loc("uMir");
+        uFlashU = loc("uFlash");
+        uBoltDir = loc("uBoltDir");
         uAmb = loc("uAmb");
         uDirV = loc("uDirV");
         uDirCol = loc("uDirCol");
@@ -155,6 +248,12 @@ final class Gfx {
         GLES20.glEnable(GLES20.GL_DEPTH_TEST);
         GLES20.glDisable(GLES20.GL_CULL_FACE);
         GLES20.glUniform1i(uTex, 0);
+        GLES20.glUniform1i(uNoise, 1);
+        GLES20.glUniform1i(uRefl, 2);
+        GLES20.glUniform1i(uMir, 3);
+        GLES20.glUniform1f(uMirOn, 0f);
+        GLES20.glUniform1f(uPud, 0f);
+        GLES20.glUniform1f(uRefPass, 0f);
         GLES20.glUniform1f(uPS, 1f);
     }
 
@@ -165,13 +264,19 @@ final class Gfx {
         GLES20.glUniformMatrix4fv(uVP, 1, false, vp, 0);
         GLES20.glUniform3f(uCam, cam[0], cam[1], cam[2]);
         GLES20.glUniform3f(uAmb, amb[0], amb[1], amb[2]);
-        float dl = (float) Math.sqrt(20 * 20 + 40 * 40 + 10 * 10);
-        GLES20.glUniform3f(uDirV, -20 / dl, 40 / dl, 10 / dl);
-        float[] dc = Mat.rgb(0x6677aa);
-        GLES20.glUniform3f(uDirCol, dc[0] * .35f, dc[1] * .35f, dc[2] * .35f);
-        float[] fc = Mat.rgb(0x070b10);
-        GLES20.glUniform3f(uFogCol, fc[0], fc[1], fc[2]);
-        GLES20.glUniform1f(uFogDen, .04f);
+        time = (float) ((System.nanoTime() - T0) / 1e9);
+        FOG[0] = .038f + .014f * bh;
+        FOG[1] = .055f + .005f * bh;
+        FOG[2] = .082f;
+        float k = (.6f + .3f * bh) * (1f + .04f * (float) Math.sin(time * 1.3));
+        GLES20.glUniform3f(uDirV, Sky.BH[0], Sky.BH[1], Sky.BH[2]);
+        GLES20.glUniform3f(uDirCol, .34f * k + flash * .5f, .22f * k + flash * .6f, .12f * k + flash * .9f);
+        GLES20.glUniform1f(uTimeU, time);
+        GLES20.glUniform3f(uFogCol, FOG[0], FOG[1], FOG[2]);
+        GLES20.glUniform1f(uFlashU, flash);
+        GLES20.glUniform3f(uBoltDir, boltDir[0], boltDir[1], boltDir[2]);
+        GLES20.glUniform1f(uFogDen, FOG_DEN);
+        GLES20.glUniform1f(uWet, .9f);
         GLES20.glUniform1f(uNumPl, n);
         GLES20.glUniform3fv(uPlPos, 8, plPos, 0);
         GLES20.glUniform3fv(uPlCol, 8, plCol, 0);
@@ -186,6 +291,34 @@ final class Gfx {
         GLES20.glUniform1f(uPS, 1.6f);
     }
 
+    static void use() {
+        GLES20.glUseProgram(prog);
+    }
+
+    static void setRes(int w, int h) {
+        GLES20.glUseProgram(prog);
+        GLES20.glUniform2f(uRes, w, h);
+    }
+
+    static void setVP(float[] vp) {
+        GLES20.glUseProgram(prog);
+        GLES20.glUniformMatrix4fv(uVP, 1, false, vp, 0);
+    }
+
+    static void setRefl(boolean on, float nx, float ny, float nz, float d, float thr) {
+        reflPass = on;
+        GLES20.glUseProgram(prog);
+        GLES20.glUniform1f(uRefPass, on ? 1f : 0f);
+        GLES20.glUniform4f(uRefPl, nx, ny, nz, d);
+        GLES20.glUniform1f(uThr, thr);
+    }
+
+    static void setMirror(boolean on, float[] pl) {
+        GLES20.glUseProgram(prog);
+        GLES20.glUniform1f(uMirOn, on ? 1f : 0f);
+        if (on) GLES20.glUniform4f(uMirPl, pl[0], pl[1], pl[2], pl[3]);
+    }
+
     static void useMat(Mat m) {
         if (m.tex != null) {
             int id = m.tex.id();
@@ -198,6 +331,8 @@ final class Gfx {
         GLES20.glUniform4f(uColor, m.r, m.g, m.b, m.a);
         GLES20.glUniform3f(uEmis, m.er, m.eg, m.eb);
         GLES20.glUniform1f(uUnlit, m.unlit ? 1f : 0f);
+        GLES20.glUniform1f(uGlass, m.glass);
+        GLES20.glUniform1f(uPud, m.puddle && reflOn && !reflPass ? 1f : 0f);
         GLES20.glUniform1f(uFogOn, m.noFog ? 0f : 1f);
         if (m.blend) {
             GLES20.glEnable(GLES20.GL_BLEND);

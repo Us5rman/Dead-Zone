@@ -10,6 +10,9 @@ final class Hud {
     volatile double banT;
     volatile double vig;
     volatile double stickX, stickY;
+    volatile double px, pz, pyaw, bh = .7;
+    volatile float[] mz = new float[0];
+    volatile float[] mp = new float[0];
     volatile int fps;
     volatile long ping = -1;
 }

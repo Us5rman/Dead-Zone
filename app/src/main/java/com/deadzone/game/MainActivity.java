@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.media.MediaPlayer;
 import android.opengl.GLSurfaceView;
 import android.os.Build;
 import android.os.Bundle;
@@ -608,5 +609,28 @@ public class MainActivity extends Activity implements Game.Ui {
     @Override
     public void onBackPressed() {
         finish();
+    }
+
+    @Override
+    public void thunder(final int idx, final float vol) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    int[] ids = {R.raw.thunder_close, R.raw.thunder_mid, R.raw.thunder_far};
+                    MediaPlayer mp = MediaPlayer.create(MainActivity.this, ids[idx]);
+                    if (mp == null) return;
+                    mp.setVolume(vol, vol);
+                    mp.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+                        @Override
+                        public void onCompletion(MediaPlayer m) {
+                            m.release();
+                        }
+                    });
+                    mp.start();
+                } catch (Exception ignored) {
+                }
+            }
+        });
     }
 }

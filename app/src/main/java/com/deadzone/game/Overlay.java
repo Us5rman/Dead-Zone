@@ -3,6 +3,7 @@ package com.deadzone.game;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RadialGradient;
 import android.graphics.Shader;
 import android.graphics.Typeface;
@@ -16,6 +17,8 @@ final class Overlay extends View {
     private final float d;
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
 
+    private final Path mmPath = new Path();
+    private final Path mmArrow = new Path();
     boolean editMode;
     int selected = -1;
     Runnable onPause;
@@ -163,6 +166,8 @@ final class Overlay extends View {
             c.drawText(sb.toString(), w / 2f, 46 * d, p);
         }
 
+        drawMap(c, w);
+
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeWidth(Math.max(1f, d));
         p.setColor(0xB3ffffff);
@@ -187,6 +192,67 @@ final class Overlay extends View {
         }
 
         controls(c);
+    }
+
+    private void drawMap(Canvas c, int w) {
+        float r = 50 * d, mx = 16 * d + r, my = 72 * d + r, s = r / 30f;
+        double yaw = hud.pyaw, cs = Math.cos(yaw), sn = Math.sin(yaw);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0xAA050709);
+        c.drawCircle(mx, my, r, p);
+        c.save();
+        mmPath.reset();
+        mmPath.addCircle(mx, my, r, Path.Direction.CW);
+        c.clipPath(mmPath);
+        c.translate(mx, my);
+        c.rotate((float) Math.toDegrees(yaw));
+        c.translate(-(float) hud.px * s, -(float) hud.pz * s);
+        p.setColor(0xFF3a4048);
+        for (double[] ob : game.world.obs) {
+            float x = (float) (ob[0] * s), z = (float) (ob[1] * s);
+            float hw = (float) (ob[2] * s / 2), hd = (float) (ob[3] * s / 2);
+            c.drawRect(x - hw, z - hd, x + hw, z + hd, p);
+        }
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(Math.max(1f, d));
+        p.setColor(0xFF6a7078);
+        c.drawRect(-45 * s, -45 * s, 45 * s, 45 * s, p);
+        p.setStyle(Paint.Style.FILL);
+        int[] zc = {0xFFdd3322, 0xFFff8822, 0xFFdd33aa, 0xFF9955ff, 0xFFffdd33};
+        float[] zz = hud.mz;
+        for (int i = 0; i + 2 < zz.length; i += 3) {
+            int t = Math.max(0, Math.min(4, (int) zz[i + 2]));
+            p.setColor(zc[t]);
+            c.drawCircle(zz[i] * s, zz[i + 1] * s, (2f + t * .6f) * d, p);
+        }
+        p.setColor(0xFF33ddff);
+        float[] pp = hud.mp;
+        for (int i = 0; i + 1 < pp.length; i += 2) c.drawCircle(pp[i] * s, pp[i + 1] * s, 2.4f * d, p);
+        c.restore();
+
+        mmArrow.reset();
+        mmArrow.moveTo(mx, my - 6 * d);
+        mmArrow.lineTo(mx - 4 * d, my + 4 * d);
+        mmArrow.lineTo(mx + 4 * d, my + 4 * d);
+        mmArrow.close();
+        p.setColor(0xFFffffff);
+        c.drawPath(mmArrow, p);
+
+        double bx = -30, bz = -50, bl = Math.hypot(bx, bz);
+        bx /= bl;
+        bz /= bl;
+        float sx = (float) (bx * cs - bz * sn), sy = (float) (bx * sn + bz * cs);
+        float rr = r - 5 * d;
+        p.setColor(0x55ff8a2a);
+        c.drawCircle(mx + sx * rr, my + sy * rr, (5f + 2f * (float) hud.bh) * d, p);
+        p.setColor(0xFFffb060);
+        c.drawCircle(mx + sx * rr, my + sy * rr, (2.5f + (float) hud.bh) * d, p);
+
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(Math.max(1f, d));
+        p.setColor(0x66aaaaaa);
+        c.drawCircle(mx, my, r, p);
+        p.setStyle(Paint.Style.FILL);
     }
 
     private static float dist(float x, float y, float a, float b) {

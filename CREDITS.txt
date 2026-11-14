@@ -1,4 +1,5 @@
-Sky, moon, cloud and rain look inspired by Bliss Shaders (an edit of Chocapic13's shaders).
+Sky, black hole, cloud, rain and fog look inspired by Bliss Shaders (an edit of Chocapic13's shaders).
 Bliss: https://github.com/X0nk/Bliss-Shader
 Chocapic13: https://www.curseforge.com/minecraft/customization/chocapic13-shaders
 All shader code in this project was written from scratch for OpenGL ES 2.0.
+Thunder sounds: tanweraman, u_39xav15uou and patricksilvey (Pixabay).

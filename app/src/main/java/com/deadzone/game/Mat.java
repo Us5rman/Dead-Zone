@@ -4,8 +4,9 @@ final class Mat {
     Tex tex;
     float r = 1, g = 1, b = 1, a = 1;
     float er, eg, eb;
-    boolean unlit, blend, additive, noFog, offset;
+    boolean unlit, blend, additive, noFog, offset, puddle;
     boolean depthWrite = true;
+    int glass;
     float repU = 1, repV = 1;
 
     static float[] rgb(int hex) {

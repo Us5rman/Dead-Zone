@@ -23,17 +23,17 @@ final class World {
     }
 
     final ArrayList<double[]> obs = new ArrayList<>();   // x, z, w, d, top
+    final ArrayList<double[]> glass = new ArrayList<>();
     final ArrayList<double[]> walls = new ArrayList<>();
     final ArrayList<Light> lights = new ArrayList<>();
     final ArrayList<Batch> solid = new ArrayList<>();
     final ArrayList<Batch> blend = new ArrayList<>();
-    final Geo stars;
 
     final Random rng = new Random();
     private final LinkedHashMap<Mat, FloatList> acc = new LinkedHashMap<>();
 
     Mat mGround, mBrick, mWood, mSkin, mShirt, mPants, mGun, mConc, mCrate, mRust, mSand, mFloor, mRd, mCloth;
-    Mat mTire, mDark, mBulb, mPool, mMud;
+    Mat mTire, mDark, mBulb, mPool, mMud, mGlass, mMirror;
     private Geo sg;
 
     World() {
@@ -45,15 +45,6 @@ final class World {
             b.geo = new Geo(e.getValue().toArray());
             (b.mat.blend ? blend : solid).add(b);
         }
-        FloatList s = new FloatList();
-        for (int i = 0; i < 250; i++) {
-            double a = rnd(0, 6.28), el = rnd(.15, 1.4), r = 80;
-            s.add((float) (Math.cos(a) * Math.cos(el) * r));
-            s.add((float) (Math.sin(el) * r));
-            s.add((float) (Math.sin(a) * Math.cos(el) * r));
-            for (int k = 0; k < 5; k++) s.add(0);
-        }
-        stars = new Geo(s.toArray());
     }
 
     double rnd(double a, double b) {
@@ -65,10 +56,15 @@ final class World {
     }
 
     private void buildMats() {
+        mGlass = Mat.color(0x0b1620).alpha(.2);
+        mGlass.glass = 1;
+        mMirror = Mat.color(0x090d11);
+        mMirror.glass = 2;
+        mMirror.offset = true;
         mGround = T((c, w, h) -> {
             Tex.noise(c, 62, 70, 44, 55);
             Tex.blot(c, "#2c2a1c", 10);
-        }, 50);
+        }, 100);
         mBrick = T((c, w, h) -> {
             Tex.noise(c, 112, 62, 50, 30);
             for (int y = 0; y < 64; y += 16) {
@@ -114,6 +110,8 @@ final class World {
             Tex.rect(c, "#b8a020", 0, 30, 32, 3);
         }, 1);
         mRd.repU = 23;
+        mGround.puddle = true;
+        mRd.puddle = true;
         mCloth = T((c, w, h) -> {
             Tex.noise(c, 150, 148, 138, 25);
             Tex.blot(c, "#5a1010", 6);
@@ -202,12 +200,32 @@ final class World {
                     mbr(hor ? gw : .1, .18, hor ? .1 : gw, hor ? x0 + gp : x0, 1.25 + k * .35, hor ? z0 : z0 + gp, mWood,
                             hor ? 0 : rot, 0, hor ? rot : 0);
                 }
+                double gy0 = 1, gy1 = h - 2.3;
+                if (gy1 - gy0 > .2) {
+                    pane(mGlass, hor ? x0 + gp : x0, (gy0 + gy1) / 2, hor ? z0 : z0 + gp, gw, gy1 - gy0, hor ? 0 : PI / 2, 1);
+                }
             } else {
                 seg(x0, z0, hor, a, b, h - 2.5, 2.5, false);
             }
             p = b;
         }
         seg(x0, z0, hor, p, len, h, 0, true);
+    }
+
+    private void pane(Mat m, double x, double y, double z, double pw, double ph, double ry, int type) {
+        mesh(Prim.plane(pw, ph), m, x, y, z, 0, ry, 0);
+        glass.add(new double[]{x, y, z, pw, ph, Math.sin(ry), Math.cos(ry), type});
+    }
+
+    private void mirror(double x, double z, double ry) {
+        double nx = Math.sin(ry), nz = Math.cos(ry);
+        pane(mMirror, x, 2.6, z, 14, 3.4, ry, 2);
+        double tx = nz, tz = -nx;
+        mb(Math.abs(tx) * 14.4 + Math.abs(nx) * .2 + .0, .2, Math.abs(tz) * 14.4 + Math.abs(nz) * .2, x, 4.4, z, mDark);
+        mb(Math.abs(tx) * 14.4 + Math.abs(nx) * .2, .2, Math.abs(tz) * 14.4 + Math.abs(nz) * .2, x, .9, z, mDark);
+        for (int s = -1; s <= 1; s += 2) {
+            mb(Math.abs(tx) * .2 + Math.abs(nx) * .2, 3.7, Math.abs(tz) * .2 + Math.abs(nz) * .2, x + tx * 7.1 * s, 2.65, z + tz * 7.1 * s, mDark);
+        }
     }
 
     private void seg(double x0, double z0, boolean hor, double a, double b, double hh, double y0, boolean solid) {
@@ -356,15 +374,16 @@ final class World {
     }
 
     private void build() {
-        mesh(Prim.plane(200, 200), mGround, 0, 0, 0, -PI / 2, 0, 0);
+        mesh(Prim.plane(400, 400), mGround, 0, 0, 0, -PI / 2, 0, 0);
         box(0, -46, 96, 2, 6, mBrick);
         box(0, 46, 96, 2, 6, mBrick);
         box(-46, 0, 2, 96, 6, mBrick);
         box(46, 0, 2, 96, 6, mBrick);
+        mirror(0, -44.9, 0);
+        mirror(0, 44.9, PI);
+        mirror(-44.9, 0, PI / 2);
+        mirror(44.9, 0, -PI / 2);
         for (int r = 0; r < 2; r++) mesh(Prim.plane(92, 8), mRd, 0, .03, 0, -PI / 2, 0, r == 1 ? PI / 2 : 0);
-        Mat moon = Mat.basic(0xdde6ff);
-        moon.noFog = true;
-        mesh(Prim.sphere(3, 8, 6), moon, -30, 32, -50);
 
         house(-20, -22, 14, 10, 4, g(d(3, 1.6, 1), d(10, 1.6, 1)), g(d(4, 2.6), d(10, 1.6, 1)), g(d(5, 1.6, 1)), g(d(5, 2.6)));
         house(22, -22, 12, 10, 4, g(d(6, 2.6)), g(d(3, 3.2), d(8, 1.6, 1)), g(d(5, 2.6)), g(d(4, 1.6, 1)));
