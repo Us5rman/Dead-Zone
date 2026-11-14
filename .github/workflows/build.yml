@@ -34,10 +34,4 @@ jobs:
           name: DeadZone
           path: DeadZone.apk
 
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "build-${{ github.run_number }}" DeadZone.apk \
-            --title "Dead Zone build ${{ github.run_number }}" \
-            --notes "Debug APK from commit ${GITHUB_SHA::7}"
+
