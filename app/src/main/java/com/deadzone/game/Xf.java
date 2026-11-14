@@ -35,6 +35,13 @@ final class Xf {
         return m;
     }
 
+    /** camera with a roll tilt: yaw, pitch, then roll */
+    static float[] makeYXZR(double px, double py, double pz, double rx, double ry, double rz) {
+        float[] m = makeYXZ(px, py, pz, rx, ry);
+        if (rz != 0) Matrix.rotateM(m, 0, (float) (rz * DEG), 0, 0, 1);
+        return m;
+    }
+
     static float[] mul(float[] a, float[] b) {
         float[] r = new float[16];
         Matrix.multiplyMM(r, 0, a, 0, b, 0);

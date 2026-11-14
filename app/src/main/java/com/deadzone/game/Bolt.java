@@ -67,6 +67,10 @@ final class Bolt {
         active = false;
     }
 
+    static void seed(long v) {
+        R.setSeed(v);
+    }
+
     static void strike(double camX, double camZ, double dirX, double dirZ) {
         double a = (R.nextDouble() - .5) * 1.6;
         double c = Math.cos(a), s = Math.sin(a);

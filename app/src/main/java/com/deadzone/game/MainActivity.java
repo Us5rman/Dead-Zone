@@ -171,6 +171,7 @@ public class MainActivity extends Activity implements Game.Ui {
         left.addView(title);
         left.addView(para(L.t("intro")));
         left.addView(para(String.format(L.t("help"), L.t("b_fire"), L.t("b_jump"), L.t("b_dive"), L.t("b_run"))));
+        left.addView(para(String.format(L.t("help2"), L.t("b_slide"), L.t("b_jump"))));
         left.addView(para(L.t("multi")));
 
         LinearLayout right = new LinearLayout(this);
@@ -342,13 +343,6 @@ public class MainActivity extends Activity implements Game.Ui {
                 set.vsync = on;
                 set.save();
                 applyGraphics();
-            }
-        }), rowLp);
-        col.addView(toggle(L.t("s_roll"), set.rollAfterDive, new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton b, boolean on) {
-                set.rollAfterDive = on;
-                set.save();
             }
         }), rowLp);
 

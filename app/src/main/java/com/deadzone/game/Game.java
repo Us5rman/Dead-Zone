@@ -98,7 +98,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     // input from the ui thread
     volatile double mvx, mvy;
     volatile boolean fireIn, reloadReq;
-    volatile boolean jumpReq, diveReq, sprintReq, paused;
+    volatile boolean jumpReq, diveReq, sprintReq, slideReq, paused;
     private double lyaw, lpitch;
 
     // player
@@ -112,9 +112,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     boolean pDead, firing;
     int fired;
 
-    // jumping, diving, rolling
-    double jy, vy, hvx, hvz, dvx, dvz, rollT, rollV0, slideT, crouchOff, dvPitch;
-    boolean grounded = true, diving, sprint;
+    // jumping, diving, crawling, sliding
+    static final double SLIDE_TIME = .85;
+    double jy, vy, hvx, hvz, dvx, dvz, slideT, slideV0, crouchOff, dvPitch, camRoll, crawlPh, fovCur = 70;
+    double wDive, wSlide, wCrawl;
+    boolean grounded = true, diving, sprint, crawling, airFast;
     private int frames;
     private long fpsT;
 
@@ -231,7 +233,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     }
 
     private float[] camWorld() {
-        return Xf.makeYXZ(cx, cy, cz, pitch + kc + dvPitch, yaw + ky);
+        return Xf.makeYXZR(cx, cy, cz, pitch + kc + dvPitch, yaw + ky, camRoll);
     }
 
     private void render() {
@@ -239,7 +241,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         float[] viewM = new float[16];
         Matrix.invertM(viewM, 0, cw, 0);
         float[] proj = new float[16];
-        Matrix.perspectiveM(proj, 0, 70f, (float) vw / vh, .1f, 160f);
+        Matrix.perspectiveM(proj, 0, (float) fovCur, (float) vw / vh, .1f, 160f);
         float[] vp = Xf.mul(proj, viewM);
 
         float[] plPos = new float[24], plCol = new float[24], plRange = new float[8];
@@ -352,16 +354,26 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         return r;
     }
 
-    private void startStrike() {
-        lightClock = 0;
+    /** the host (or a solo player) picks the strike and tells everybody, so it lands for all players at once */
+    private void hostStrike() {
         float[] fw = Xf.dir(camWorld(), 0, 0, -1);
         double hl = Math.hypot(fw[0], fw[2]);
-        double dx = hl > .01 ? fw[0] / hl : -Math.sin(yaw), dz = hl > .01 ? fw[2] / hl : -Math.cos(yaw);
-        Bolt.strike(cx, cz, dx, dz);
+        double dx = r2(hl > .01 ? fw[0] / hl : -Math.sin(yaw)), dz = r2(hl > .01 ? fw[2] / hl : -Math.cos(yaw));
+        double rx = role == SOLO ? r2(cx) : 0, rz = role == SOLO ? r2(cz) : 0;
+        long seed = rng.nextLong();
+        double tt = r2(rr(.5, 3.8));
+        bc(Net.obj("t", "strike", "seed", seed, "rx", rx, "rz", rz, "dx", dx, "dz", dz, "tt", tt));
+        startStrike(seed, rx, rz, dx, dz, tt);
+    }
+
+    private void startStrike(long seed, double rx, double rz, double dx, double dz, double tt) {
+        lightClock = 0;
+        Bolt.seed(seed);
+        Bolt.strike(rx, rz, dx, dz);
         Gfx.boltDir[0] = (float) Bolt.hx;
         Gfx.boltDir[1] = 0f;
         Gfx.boltDir[2] = (float) Bolt.hz;
-        thunderT = rr(.5, 3.8);
+        thunderT = tt;
         thunderDone = false;
     }
 
@@ -855,9 +867,9 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             flickT = .09;
             for (World.Light l : world.lights) if (l.flick) l.inten = 1 + rng.nextDouble() * .7;
         }
-        if (state == PLAY && lightClock < 0) {
+        if (state == PLAY && lightClock < 0 && role != CLIENT) {
             lightWait -= dt;
-            if (lightWait <= 0) startStrike();
+            if (lightWait <= 0) hostStrike();
         }
         if (lightClock >= 0) {
             double t = lightClock;
@@ -909,21 +921,35 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             sprintReq = false;
             sprint = !sprint;
         }
-        if (Math.hypot(mvx, mvy) < .1) sprint = false;
+        double stick = Math.hypot(mvx, mvy);
         if (jumpReq) {
             jumpReq = false;
-            if (grounded && !diving && rollT <= 0 && slideT <= 0 && !pDead) {
-                vy = 5.6;
-                grounded = false;
+            if (!pDead) {
+                if (crawling) {
+                    crawling = false;
+                } else if (grounded && !diving) {
+                    vy = 5.6;
+                    grounded = false;
+                    slideT = 0;
+                    airFast = stick > .1 && (sprint || stick > .95);
+                    if (airFast) {
+                        hvx *= 1.3;
+                        hvz *= 1.3;
+                    }
+                }
             }
         }
         if (diveReq) {
             diveReq = false;
             startDive();
         }
+        if (slideReq) {
+            slideReq = false;
+            startSlide();
+        }
 
         double sn = Math.sin(yaw), cs = Math.cos(yaw);
-        boolean free = !diving && rollT <= 0 && slideT <= 0;
+        boolean free = !diving && slideT <= 0;
         double fx = mvx, fz = -mvy;
         if (pDead) fx = fz = 0;
         double L = Math.hypot(fx, fz);
@@ -931,11 +957,13 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             fx /= L;
             fz /= L;
         }
-        double sp = (L > 1.0 || Math.hypot(mvx, mvy) > .95 || sprint) ? 6.5 : 4;
+        boolean fast = sprint || stick > .95;
+        double sp = crawling ? (fast ? 3.0 : 1.6) : (fast ? 6.5 : 4);
+        if (!grounded && airFast) sp *= 1.3;
         boolean moving = Math.hypot(fx, fz) > .1 && free && grounded;
         if (free) {
             double tx = (fx * cs - fz * sn) * sp, tz = (-fx * sn - fz * cs) * sp;
-            double k = Math.min(1, (grounded ? 60 : 2.5) * dt);
+            double k = Math.min(1, (grounded ? (crawling ? 9 : 60) : 2.5) * dt);
             hvx += (tx - hvx) * k;
             hvz += (tz - hvz) * k;
         } else if (diving) {
@@ -943,23 +971,12 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             double f = Math.exp(-(vy < 0 && near < .9 ? 3.2 : .15) * dt);
             hvx *= f;
             hvz *= f;
-        } else if (rollT > 0) {
-            rollT -= dt;
-            double p = Math.max(0, Math.min(1, 1 - rollT));
-            double rs = rollV0 * (1 - p) * (1 - p);
-            hvx = dvx * rs;
-            hvz = dvz * rs;
-            dvPitch = -2 * PI * (p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
-            if (rollT <= 0) {
-                rollT = 0;
-                dvPitch = 0;
-                hvx = hvz = 0;
-            }
         } else {
             slideT -= dt;
-            double f = Math.exp(-5.5 * dt);
-            hvx *= f;
-            hvz *= f;
+            double p = Math.max(0, Math.min(1, 1 - slideT / SLIDE_TIME));
+            double ss = slideV0 * (1 - .6 * p * p);
+            hvx = dvx * ss;
+            hvz = dvz * ss;
             if (slideT <= 0) slideT = 0;
         }
         cx += hvx * dt;
@@ -990,14 +1007,21 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             grounded = true;
         }
 
-        double lowTarget = diving ? .55 : rollT > 0 ? .7 : slideT > 0 ? .9 : 0;
+        double lowTarget = diving ? .55 : crawling ? .95 : slideT > 0 ? .8 : 0;
         crouchOff += (lowTarget - crouchOff) * Math.min(1, dt * (lowTarget > crouchOff ? 14 : 6));
-        if (rollT <= 0) {
-            double pt = diving ? -.45 : slideT > 0 ? -.2 : 0;
-            dvPitch += (pt - dvPitch) * Math.min(1, dt * 10);
-        }
-        if (moving) bob += dt * sp * 1.6;
-        cy = 1.7 + jy - crouchOff + (moving ? Math.sin(bob) * .06 : 0);
+        double pt = diving ? -.45 : slideT > 0 ? -.1 : 0;
+        dvPitch += (pt - dvPitch) * Math.min(1, dt * 10);
+        if (crawling && Math.hypot(fx, fz) > .1) crawlPh += dt * (fast ? 9 : 5.5);
+        double rt = slideT > 0 ? -.16 : diving ? .1 : crawling ? Math.sin(crawlPh) * .035 : 0;
+        camRoll += (rt - camRoll) * Math.min(1, dt * 9);
+        wDive += ((diving ? 1 : 0) - wDive) * Math.min(1, dt * 12);
+        wSlide += ((slideT > 0 ? 1 : 0) - wSlide) * Math.min(1, dt * 12);
+        wCrawl += ((crawling ? 1 : 0) - wCrawl) * Math.min(1, dt * 10);
+        double fovT = 70 + (moving && fast && !crawling ? 6 : 0) + (diving ? 5 : 0) + (slideT > 0 ? 7 : 0);
+        fovCur += (fovT - fovCur) * Math.min(1, dt * 6);
+        if (moving && !crawling) bob += dt * sp * 1.6;
+        cy = 1.7 + jy - crouchOff + (moving && !crawling ? Math.sin(bob) * .06 : 0)
+                + (crawling && Math.hypot(fx, fz) > .1 ? Math.sin(crawlPh * 2) * .015 : 0);
 
         kzv += (-320 * kz - 24 * kzv) * dt;
         kz += kzv * dt;
@@ -1061,6 +1085,13 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         } else {
             slp = mag <= 0 ? 1 : (sl < .035 ? sl / .035 : sl < .1 ? 1 - (sl - .035) / .065 : 0);
         }
+        double c1 = Math.sin(crawlPh), c2 = Math.cos(crawlPh);
+        gx += wDive * .04 + wSlide * .10 + wCrawl * (.03 + c1 * .05);
+        gy += wDive * -.08 + wSlide * -.10 + wCrawl * (-.06 + Math.abs(c2) * .02);
+        gz += wDive * .12 + wSlide * .02 + wCrawl * .05;
+        grx += wDive * -.45 + wSlide * -.18 + wCrawl * -.25;
+        gry += wDive * .25 + wSlide * .55 + wCrawl * (.10 + c1 * .10);
+        grz += wDive * -.15 + wSlide * -.45 + wCrawl * c1 * .12;
         double sb = .075 * slp;
         gun.slide.pz = sb;
         gun.ham.rx = .45 + sb * 4;
@@ -1076,7 +1107,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         g.ry = .07 + gry + kro * .3;
         g.rz = grz + kro;
 
-        if (firing && !pDead && cd <= 0 && rl <= 0 && rollT <= 0) {
+        if (firing && !pDead && cd <= 0 && rl <= 0) {
             if (mag > 0) {
                 shoot();
             } else {
@@ -1351,8 +1382,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             m.ry = q.yaw + PI;
             m.visible = !q.dead;
             m.py += (q.y - m.py) * a;
-            if (q.mode == 2) q.inner.rx += dt * 9;
-            else q.inner.rx = q.mode == 1 ? 1.2 : 0;
+            q.inner.rx = q.mode == 1 ? 1.2 : q.mode == 2 ? 1.45 : q.mode == 3 ? -.8 : 0;
             double spd = Math.hypot(m.px - ox, m.pz - oz) / Math.max(dt, .001);
             q.ph += dt * spd * 1.6;
             double w = spd > .5 ? Math.sin(q.ph) * .6 : 0;
@@ -1369,13 +1399,15 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     /* ---- jumping, diving, menu ---- */
 
     private int mode() {
-        return diving || slideT > 0 ? 1 : rollT > 0 ? 2 : 0;
+        return diving ? 1 : crawling ? 2 : slideT > 0 ? 3 : 0;
     }
 
     private void resetPhysics() {
-        jy = vy = hvx = hvz = rollT = slideT = crouchOff = dvPitch = 0;
+        jy = vy = hvx = hvz = slideT = crouchOff = dvPitch = camRoll = crawlPh = 0;
+        wDive = wSlide = wCrawl = 0;
+        fovCur = 70;
         grounded = true;
-        diving = false;
+        diving = crawling = airFast = false;
         sprint = false;
     }
 
@@ -1391,7 +1423,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     }
 
     private void startDive() {
-        if (pDead || diving || rollT > 0 || slideT > 0) return;
+        if (pDead || diving || crawling || slideT > 0) return;
         double sn = Math.sin(yaw), cs = Math.cos(yaw);
         double fx = mvx, fz = -mvy, dx, dz;
         if (Math.hypot(fx, fz) > .15) {
@@ -1414,22 +1446,41 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         } else {
             vy = Math.min(vy, 1.2) - 2.0;
         }
-        sprint = false;
+        slideT = 0;
+        airFast = false;
         sfx.noise(.25, .3, 1800);
     }
 
+    private void startSlide() {
+        if (pDead || diving || crawling || slideT > 0 || !grounded) return;
+        double sn = Math.sin(yaw), cs = Math.cos(yaw);
+        double fx = mvx, fz = -mvy, dx, dz;
+        if (Math.hypot(fx, fz) > .15) {
+            dx = fx * cs - fz * sn;
+            dz = -fx * sn - fz * cs;
+        } else {
+            dx = -sn;
+            dz = -cs;
+        }
+        double l = Math.hypot(dx, dz);
+        dvx = dx / l;
+        dvz = dz / l;
+        slideV0 = Math.min(9.5, Math.max(7.8, Math.hypot(hvx, hvz) * 1.3 + (sprint ? 1.0 : 0)));
+        hvx = dvx * slideV0;
+        hvz = dvz * slideV0;
+        slideT = SLIDE_TIME;
+        sfx.noise(.35, .3, 1200);
+    }
+
     private void land(double impact) {
+        airFast = false;
         if (diving) {
             diving = false;
-            if (set.rollAfterDive) {
-                rollT = 1.0;
-                rollV0 = Math.max(Math.hypot(hvx, hvz) * .9, 3.0);
-                sfx.noise(.2, .35, 900);
-                sfx.tone(90, .15, Sfx.TRI, .2);
-            } else {
-                slideT = .6;
-                sfx.noise(.25, .4, 600);
-            }
+            crawling = true;
+            crawlPh = 0;
+            crouchOff += .1;
+            sfx.noise(.25, .4, 600);
+            sfx.tone(80, .12, Sfx.TRI, .2);
         } else if (impact > 4) {
             crouchOff += Math.min(.35, impact * .035);
             sfx.noise(.08, Math.min(.35, impact * .04), 700);
@@ -1590,6 +1641,10 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 break;
             case "ammo":
                 res += m.optInt("n", 3);
+                break;
+            case "strike":
+                startStrike(m.optLong("seed"), m.optDouble("rx"), m.optDouble("rz"), m.optDouble("dx"),
+                        m.optDouble("dz"), m.optDouble("tt", 1));
                 break;
             case "wave":
                 onWave(m.optInt("w"));

@@ -59,6 +59,8 @@ final class Overlay extends View {
                 return L.t("b_jump");
             case Settings.DIVE:
                 return L.t("b_dive");
+            case Settings.SLIDE:
+                return L.t("b_slide");
             default:
                 return "";
         }
@@ -272,6 +274,8 @@ final class Overlay extends View {
             game.jumpReq = true;
         } else if (dist(x, y, bx(Settings.DIVE), by(Settings.DIVE)) <= br(Settings.DIVE) * 1.2f) {
             game.diveReq = true;
+        } else if (dist(x, y, bx(Settings.SLIDE), by(Settings.SLIDE)) <= br(Settings.SLIDE) * 1.2f) {
+            game.slideReq = true;
         } else if (dist(x, y, bx(Settings.RELOAD), by(Settings.RELOAD)) <= br(Settings.RELOAD) * 1.2f) {
             game.reloadReq = true;
         } else if (dist(x, y, bx(Settings.RUN), by(Settings.RUN)) <= br(Settings.RUN) * 1.2f) {
