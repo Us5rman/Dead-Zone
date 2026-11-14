@@ -60,7 +60,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
     static final class Zombie {
         int id;
-        double x, z, ry, tx, tz, hp, t, dt, atk, sp, scale;
+        double x, z, ry, tx, tz, hp, t, dt, atk, sp, scale, dmg = 10;
+        int type;
         boolean dead;
         Node o, g, aL, aR, lL, lR;
     }
@@ -94,6 +95,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     double cx, cy = 1.7, cz, yaw, pitch;
     double hp = 100;
     int mag = 12, res = 60, kills, wave;
+    double bhCur = .7;
     int state = MENU, role = SOLO, myIdx;
     String netId = "host";
     String roomCode = "";
@@ -119,6 +121,14 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     int zid;
 
     private final Node bloodNode = new Node();
+    private final Mat mRunSkin = Mat.color(0xc87060).emissive(0x401008, 1);
+    private final Mat mRunShirt = Mat.color(0x6a1818);
+    private final Mat mBruteShirt = Mat.color(0x34344a);
+    private final Mat mBruteSkin = Mat.color(0x7a9a6a);
+    private final Mat mVoidSkin = Mat.color(0x2a1048).emissive(0x7a30ff, .9);
+    private final Mat mVoidShirt = Mat.color(0x180a30).emissive(0x4a1a99, .8);
+    private final Mat mTitanSkin = Mat.color(0x3a0a0a).emissive(0xff4a1a, .9);
+    private final Mat mTitanShirt = Mat.color(0x1a0808).emissive(0xaa2a08, .7);
     private final Mat mBrass = Mat.color(0xc8a040).emissive(0x3a2c08, 1);
     private int vw = 1, vh = 1;
     private long last;
@@ -158,6 +168,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         vw = Math.max(1, w);
         vh = Math.max(1, h);
         GLES20.glViewport(0, 0, w, h);
+        Gfx.setRes(vw, vh);
+        Sky.resize(vw, vh);
     }
 
     @Override
@@ -165,6 +177,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         long now = System.nanoTime();
         double dt = last == 0 ? .016 : Math.min((now - last) / 1e9, .05);
         last = now;
+        bhCur += (bhSize(wave) - bhCur) * Math.min(1, dt * .5);
         if (state == PLAY) update(dt);
         else tickLights(dt);
         render();
@@ -212,16 +225,43 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         float[] amb = {(float) (ac[0] * ambI), (float) (ac[1] * ambI), (float) (ac[2] * ambI)};
         float[] fwd = Xf.dir(cw, 0, 0, -1);
 
+        float[] camPos = {(float) cx, (float) cy, (float) cz};
+        Gfx.flash = (float) Math.max(0, Math.min(1, (ambI - .9) / 1.5));
+        Gfx.bh = (float) bhCur;
+        Gfx.frame(vp, camPos, fwd, amb, plPos, plCol, plRange, n);
+
+        boolean refl = Sky.reflOk && pitch + kc < .8;
+        Gfx.reflOn = refl;
+        if (refl) {
+            float[] flipM = Xf.ident();
+            flipM[5] = -1f;
+            Sky.beginReflect();
+            Gfx.setVP(Xf.mul(vp, flipM));
+            Gfx.setRefl(true);
+            world.draw(false);
+            drawEntities();
+            Sky.drawSky(vp, camPos, true);
+            Gfx.setRefl(false);
+            Gfx.setVP(vp);
+            Sky.endReflect(vw, vh);
+        }
+
         float[] bg = Mat.rgb(bgHex);
         GLES20.glDepthMask(true);
         GLES20.glClearColor(bg[0], bg[1], bg[2], 1f);
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
 
-        Gfx.flash = (float) Math.max(0, Math.min(1, (ambI - .9) / 1.5));
-        Gfx.frame(vp, new float[]{(float) cx, (float) cy, (float) cz}, fwd, amb, plPos, plCol, plRange, n);
-
         world.draw(false);
+        drawEntities();
+        gun.gun.draw(cw, false);
 
+        Sky.drawSky(vp, camPos, false);
+        world.draw(true);
+        Sky.drawRain(vp, camPos);
+        gun.gun.draw(cw, true);
+    }
+
+    private void drawEntities() {
         for (Zombie z : zs) {
             z.o.px = z.x;
             z.o.pz = z.z;
@@ -236,13 +276,10 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             bloodNode.draw(Xf.ID, false);
         }
         for (Debris d : deb) d.n.draw(Xf.ID, false);
-        gun.gun.draw(cw, false);
+    }
 
-        float[] camPos = {(float) cx, (float) cy, (float) cz};
-        Sky.drawSky(vp, camPos);
-        world.draw(true);
-        Sky.drawRain(vp, camPos);
-        gun.gun.draw(cw, true);
+    static double bhSize(int w) {
+        return Math.min(4.2, .55 + .17 * w);
     }
 
     /* ---- starting and stopping ---- */
@@ -349,8 +386,13 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     }
 
     private void onWave(int w) {
+        double a = bhSize(w - 1), b = bhSize(w);
         wave = w;
         ban("WAVE " + wave);
+        if (a < 1.2 && b >= 1.2) ban("THE VOID GROWS  -  RUNNERS");
+        else if (a < 1.9 && b >= 1.9) ban("THE VOID GROWS  -  BRUTES");
+        else if (a < 2.6 && b >= 2.6) ban("THE VOID GROWS  -  VOIDLINGS");
+        else if (a < 3.5 && b >= 3.5) ban("THE VOID GROWS  -  TITANS");
         if (wave > 1) {
             if (pDead) {
                 pDead = false;
@@ -564,20 +606,57 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
     /* ---- zombies and players ---- */
 
-    private Zombie mkZombie() {
+    private int pickType() {
+        double sz = bhSize(wave), r = rng.nextDouble();
+        if (sz >= 3.5 && r < .07) return 4;
+        if (sz >= 2.6 && r < .22) return 3;
+        if (sz >= 1.9 && r < .4) return 2;
+        if (sz >= 1.2 && r < .62) return 1;
+        return 0;
+    }
+
+    private Zombie mkZombie(int type) {
         Zombie z = new Zombie();
-        z.scale = .95 + rng.nextDouble() * .15;
+        z.type = type;
+        double[] mul = {1, .92, 1.45, 1.25, 2.1};
+        z.scale = (.95 + rng.nextDouble() * .15) * mul[type];
         z.hp = 3 + Math.floor(wave / 3.0);
         z.t = rng.nextDouble() * 6;
         z.sp = 1.1 + wave * .12 + rng.nextDouble() * .5;
+        Mat shirt = world.mShirt, skin = world.mSkin;
+        if (type == 1) {
+            z.hp = 2 + Math.floor(wave / 4.0);
+            z.sp = Math.min(5.5, z.sp * 1.9);
+            z.dmg = 8;
+            shirt = mRunShirt;
+            skin = mRunSkin;
+        } else if (type == 2) {
+            z.hp = 12 + wave;
+            z.sp *= .75;
+            z.dmg = 22;
+            shirt = mBruteShirt;
+            skin = mBruteSkin;
+        } else if (type == 3) {
+            z.hp = 8 + Math.floor(wave * .8);
+            z.sp = Math.min(4.5, z.sp * 1.25);
+            z.dmg = 16;
+            shirt = mVoidShirt;
+            skin = mVoidSkin;
+        } else if (type == 4) {
+            z.hp = 40 + wave * 2;
+            z.sp *= .7;
+            z.dmg = 35;
+            shirt = mTitanShirt;
+            skin = mTitanSkin;
+        }
         z.o = new Node();
         z.o.s = z.scale;
         z.g = new Node();
         z.o.kids.add(z.g);
-        z.g.parts.add(Node.box(.5, .7, .25, 0, 1.15, 0, world.mShirt));
-        z.g.parts.add(Node.box(.3, .3, .3, 0, 1.65, 0, world.mSkin));
-        z.aL = limb(z.g, -.35, 1.45, Node.box(.14, .6, .14, 0, -.28, 0, world.mSkin));
-        z.aR = limb(z.g, .35, 1.45, Node.box(.14, .6, .14, 0, -.28, 0, world.mSkin));
+        z.g.parts.add(Node.box(.5, .7, .25, 0, 1.15, 0, shirt));
+        z.g.parts.add(Node.box(.3, .3, .3, 0, 1.65, 0, skin));
+        z.aL = limb(z.g, -.35, 1.45, Node.box(.14, .6, .14, 0, -.28, 0, skin));
+        z.aR = limb(z.g, .35, 1.45, Node.box(.14, .6, .14, 0, -.28, 0, skin));
         z.aL.rx = z.aR.rx = -1.4;
         z.lL = limb(z.g, -.13, .8, Node.box(.18, .8, .18, 0, -.4, 0, world.mPants));
         z.lR = limb(z.g, .13, .8, Node.box(.18, .8, .18, 0, -.4, 0, world.mPants));
@@ -620,7 +699,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     }
 
     private void spawn() {
-        Zombie z = mkZombie();
+        Zombie z = mkZombie(pickType());
         z.id = ++zid;
         zmap.put(z.id, z);
         List<Tgt> l = allPl();
@@ -963,11 +1042,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                         if (z.atk <= 0) {
                             z.atk = 1;
                             if (best.id.equals("host")) {
-                                hp -= 10;
+                                hp -= z.dmg;
                                 hurtT = .4;
                                 sfx.tone(120, .2, Sfx.SQUARE, .3);
                             } else {
-                                sendTo(best.id, Net.obj("t", "hurt", "d", 10));
+                                sendTo(best.id, Net.obj("t", "hurt", "d", z.dmg));
                             }
                         }
                     }
@@ -1045,7 +1124,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 }
                 JSONArray z = new JSONArray();
                 for (Zombie zb : zs) {
-                    z.put(new JSONArray().put(zb.id).put(r2(zb.x)).put(r2(zb.z)).put(r2(zb.ry)).put(zb.dead ? 1 : 0));
+                    z.put(new JSONArray().put(zb.id).put(r2(zb.x)).put(r2(zb.z)).put(r2(zb.ry)).put(zb.dead ? 1 : 0).put(zb.type));
                 }
                 net.sendG(Net.obj("t", "snap", "w", wave, "k", kills, "p", p, "z", z), null);
             }
@@ -1068,7 +1147,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 seen.add(id);
                 Zombie z = zmap.get(id);
                 if (z == null) {
-                    z = mkZombie();
+                    z = mkZombie(e.optInt(5));
                     z.id = id;
                     z.x = z.tx = e.optDouble(1);
                     z.z = z.tz = e.optDouble(2);

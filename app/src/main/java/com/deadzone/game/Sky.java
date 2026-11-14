@@ -9,14 +9,16 @@ import java.nio.FloatBuffer;
 import java.util.Random;
 
 final class Sky {
-    static final float[] MOON = norm(-30f, 32f, -50f);
+    static final float[] BH = norm(-30f, 34f, -50f);
 
     private static final int RAIN = 1400;
     private static final int NS = 128;
     private static final float[] INV = new float[16];
 
     private static int skyProg, rainProg, noiseTex, skyVbo, rainVbo;
-    private static int sInv, sCam, sMoon, sHor, sTime, sFlash, sCover, sNoise;
+    private static int fbo, reflTex, depthRb, rw, rh;
+    static boolean reflOk;
+    private static int sInv, sCam, sBH, sHor, sTime, sFlash, sCover, sNoise, sSize, sCut, sFlip;
     private static int rVP, rCam, rTime, rFlash, rFogCol, rFogDen, rMoonCol;
 
     private static final String SKY_VERT = """
@@ -37,15 +39,15 @@ final class Sky {
             varying vec2 vN;
             uniform mat4 uInvVP;
             uniform vec3 uCam;
-            uniform vec3 uMoon;
+            uniform vec3 uBH;
             uniform vec3 uHor;
             uniform float uTime;
             uniform float uFlash;
             uniform float uCover;
+            uniform float uSize;
+            uniform float uCut;
+            uniform float uFlip;
             uniform sampler2D uNoise;
-
-            const float MR = 0.062;
-            const float MC = 0.998078;
 
             float vn(vec2 p) {
               vec2 i = floor(p);
@@ -75,12 +77,13 @@ final class Sky {
             void main() {
               vec4 f = uInvVP * vec4(vN, 1.0, 1.0);
               vec3 d = normalize(f.xyz / f.w - uCam);
+              d.y *= uFlip;
               float h = clamp(d.y, 0.0, 1.0);
               vec3 zen = vec3(0.008, 0.016, 0.040);
               vec3 col = mix(uHor, zen, pow(h, 0.45));
-              float md = dot(d, uMoon);
+              float md = dot(d, uBH);
               float mp = max(md, 0.0);
-              col += vec3(0.10, 0.14, 0.24) * (pow(mp, 6.0) * 0.35 + pow(mp, 48.0) * 0.6 + pow(mp, 600.0) * 1.2);
+              col += vec3(0.30, 0.16, 0.07) * (pow(mp, 5.0) * 0.25 + pow(mp, 24.0) * 0.35) * uSize * 0.6;
               col += vec3(0.05, 0.07, 0.12) * uFlash * (0.4 + h);
 
               vec2 g = d.xz / (max(d.y, 0.0) + 0.35) * 70.0;
@@ -91,19 +94,40 @@ final class Sky {
               st *= smoothstep(0.02, 0.25, d.y);
               col += vec3(0.7, 0.8, 1.0) * st * 0.9;
 
-              if (md > MC - 0.001) {
-                vec3 mt = normalize(cross(vec3(0.0, 1.0, 0.0), uMoon));
-                vec3 mb = cross(uMoon, mt);
-                vec2 mu = vec2(dot(d, mt), dot(d, mb)) / MR;
-                float mz = sqrt(max(1.0 - dot(mu, mu), 0.0));
-                vec3 mn = vec3(mu, mz);
-                float tex = vn(mu * 5.0 + 11.0) * 0.55 + vn(mu * 13.0 + 3.0) * 0.3 + vn(mu * 30.0) * 0.15;
-                float maria = smoothstep(0.35, 0.6, vn(mu * 2.2 + 5.0));
-                float alb = mix(0.55, 1.0, tex) * mix(1.0, 0.62, maria);
-                float lit = smoothstep(-0.15, 0.35, dot(mn, normalize(vec3(0.75, 0.2, 0.6))));
-                vec3 mcol = vec3(0.86, 0.90, 1.0) * alb * lit * (0.55 + 0.45 * mz) * 1.25;
-                float disc = smoothstep(MC - 0.00025, MC + 0.00025, md);
-                col = mix(col, mcol, disc);
+              if (md > uCut) {
+                float rs = 0.075 * uSize;
+                vec3 bt = normalize(cross(vec3(0.0, 1.0, 0.0), uBH));
+                vec3 bb = cross(uBH, bt);
+                vec2 uv = vec2(dot(d, bt), dot(d, bb)) / rs;
+                float ca = 0.9553;
+                float sa = 0.2955;
+                float x = uv.x * ca - uv.y * sa;
+                float y = uv.x * sa + uv.y * ca;
+                float r = length(vec2(x, y));
+                float ay = abs(y);
+                col *= smoothstep(0.97, 1.0, r);
+
+                float dop = 0.55 + 0.45 * smoothstep(-1.5, 1.5, y);
+                float th = 0.07 + 0.05 * ay;
+                float across = exp(-pow(x / th, 2.0));
+                float prof = smoothstep(1.05, 1.4, ay) * smoothstep(4.2, 1.7, ay);
+                float sk = 0.55 + 0.9 * vn(vec2(x * 9.0 / (1.0 + 0.3 * ay), y * 1.6 - uTime * 0.35));
+                vec3 hot = vec3(1.0, 0.86, 0.66);
+                vec3 cool = vec3(0.95, 0.42, 0.12);
+                vec3 dc = mix(hot, cool, smoothstep(1.1, 3.2, max(ay, r * 0.8)));
+                float em = across * prof * dop * sk * 2.2;
+
+                float sideness = abs(x) / max(r, 0.001);
+                float arc1 = exp(-pow((r - 1.28) / 0.2, 2.0)) * smoothstep(0.15, 0.9, sideness);
+                float arc2 = exp(-pow((r - 1.75) / 0.45, 2.0)) * smoothstep(0.3, 1.0, sideness);
+                float sk2 = 0.6 + 0.8 * vn(vec2(r * 5.0, (y / max(r, 0.001)) * 6.0 - uTime * 0.2));
+                em += arc1 * 1.6 * dop + arc2 * 0.35 * sk2 * dop;
+
+                float ring = exp(-pow((r - 1.035) / 0.022, 2.0));
+                float glow = exp(-max(r - 1.0, 0.0) * 0.9) * smoothstep(0.99, 1.05, r) * 0.12;
+                col += dc * em * smoothstep(0.99, 1.06, r);
+                col += vec3(1.0, 0.92, 0.78) * ring * 1.4;
+                col += vec3(0.9, 0.5, 0.2) * glow;
               }
 
               if (d.y > 0.015) {
@@ -112,11 +136,12 @@ final class Sky {
                 float c = fbm4(p);
                 float cd = smoothstep(uCover, uCover + 0.24, c);
                 if (cd > 0.002) {
-                  float cl = smoothstep(uCover, uCover + 0.24, fbm2(p + uMoon.xz * 0.05));
+                  float cl = smoothstep(uCover, uCover + 0.24, fbm2(p + uBH.xz * 0.05));
                   float shade = exp(-cl * 1.8);
-                  float rim = pow(mp, 10.0);
+                  float rim = pow(mp, 10.0) * (0.6 + 0.4 * uSize);
+                  vec3 lc = vec3(0.50, 0.34, 0.22) * (0.5 + 0.35 * uSize);
                   vec3 cc = vec3(0.05, 0.065, 0.095) * (0.5 + 0.5 * shade);
-                  cc += vec3(0.30, 0.38, 0.55) * shade * (0.18 + 0.9 * rim) * (0.4 + 0.6 * (1.0 - cd));
+                  cc += lc * shade * (0.12 + 0.9 * rim) * (0.4 + 0.6 * (1.0 - cd));
                   cc += vec3(0.5, 0.6, 0.95) * uFlash * (0.5 + 0.5 * shade);
                   cd *= smoothstep(0.015, 0.22, d.y);
                   col = mix(col, cc, cd);
@@ -228,7 +253,10 @@ final class Sky {
 
         sInv = GLES20.glGetUniformLocation(skyProg, "uInvVP");
         sCam = GLES20.glGetUniformLocation(skyProg, "uCam");
-        sMoon = GLES20.glGetUniformLocation(skyProg, "uMoon");
+        sBH = GLES20.glGetUniformLocation(skyProg, "uBH");
+        sSize = GLES20.glGetUniformLocation(skyProg, "uSize");
+        sCut = GLES20.glGetUniformLocation(skyProg, "uCut");
+        sFlip = GLES20.glGetUniformLocation(skyProg, "uFlip");
         sHor = GLES20.glGetUniformLocation(skyProg, "uHor");
         sTime = GLES20.glGetUniformLocation(skyProg, "uTime");
         sFlash = GLES20.glGetUniformLocation(skyProg, "uFlash");
@@ -279,16 +307,70 @@ final class Sky {
         rainVbo = buffer(rain);
     }
 
-    static void drawSky(float[] vp, float[] cam) {
+    static void resize(int w, int h) {
+        rw = Math.max(64, w / 2);
+        rh = Math.max(32, h / 2);
+        if (fbo == 0) {
+            int[] b = new int[1];
+            GLES20.glGenFramebuffers(1, b, 0);
+            fbo = b[0];
+            GLES20.glGenTextures(1, b, 0);
+            reflTex = b[0];
+            GLES20.glGenRenderbuffers(1, b, 0);
+            depthRb = b[0];
+        }
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE2);
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, reflTex);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
+        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, rw, rh, 0, GLES20.GL_RGBA,
+                GLES20.GL_UNSIGNED_BYTE, null);
+        GLES20.glBindRenderbuffer(GLES20.GL_RENDERBUFFER, depthRb);
+        GLES20.glRenderbufferStorage(GLES20.GL_RENDERBUFFER, GLES20.GL_DEPTH_COMPONENT16, rw, rh);
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, fbo);
+        GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D,
+                reflTex, 0);
+        GLES20.glFramebufferRenderbuffer(GLES20.GL_FRAMEBUFFER, GLES20.GL_DEPTH_ATTACHMENT, GLES20.GL_RENDERBUFFER,
+                depthRb);
+        reflOk = GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER) == GLES20.GL_FRAMEBUFFER_COMPLETE;
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+    }
+
+    static void beginReflect() {
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE2);
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, fbo);
+        GLES20.glViewport(0, 0, rw, rh);
+        GLES20.glDepthMask(true);
+        GLES20.glClearColor(Gfx.FOG[0], Gfx.FOG[1], Gfx.FOG[2], 1f);
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
+    }
+
+    static void endReflect(int w, int h) {
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
+        GLES20.glViewport(0, 0, w, h);
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE2);
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, reflTex);
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+    }
+
+    static void drawSky(float[] vp, float[] cam, boolean flip) {
         Matrix.invertM(INV, 0, vp, 0);
         GLES20.glUseProgram(skyProg);
         GLES20.glUniformMatrix4fv(sInv, 1, false, INV, 0);
         GLES20.glUniform3f(sCam, cam[0], cam[1], cam[2]);
-        GLES20.glUniform3f(sMoon, MOON[0], MOON[1], MOON[2]);
+        GLES20.glUniform3f(sBH, BH[0], BH[1], BH[2]);
+        GLES20.glUniform1f(sSize, Gfx.bh);
+        GLES20.glUniform1f(sCut, (float) Math.cos(Math.min(.075 * Gfx.bh * 6.5, 1.25)));
+        GLES20.glUniform1f(sFlip, flip ? -1f : 1f);
         GLES20.glUniform3f(sHor, Gfx.FOG[0], Gfx.FOG[1], Gfx.FOG[2]);
         GLES20.glUniform1f(sTime, Gfx.time);
         GLES20.glUniform1f(sFlash, Gfx.flash);
-        GLES20.glUniform1f(sCover, .42f);
+        GLES20.glUniform1f(sCover, .5f);
         GLES20.glActiveTexture(GLES20.GL_TEXTURE1);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, noiseTex);
         GLES20.glUniform1i(sNoise, 1);
@@ -312,7 +394,7 @@ final class Sky {
         GLES20.glUniform1f(rFlash, Gfx.flash);
         GLES20.glUniform3f(rFogCol, Gfx.FOG[0] + Gfx.flash * .1f, Gfx.FOG[1] + Gfx.flash * .13f, Gfx.FOG[2] + Gfx.flash * .2f);
         GLES20.glUniform1f(rFogDen, Gfx.FOG_DEN);
-        GLES20.glUniform3f(rMoonCol, .45f, .54f, .72f);
+        GLES20.glUniform3f(rMoonCol, .52f + .06f * Gfx.bh, .44f + .03f * Gfx.bh, .42f);
         GLES20.glEnable(GLES20.GL_BLEND);
         GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA);
         GLES20.glDepthMask(false);

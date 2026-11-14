@@ -104,6 +104,8 @@ final class World {
             Tex.rect(c, "#b8a020", 0, 30, 32, 3);
         }, 1);
         mRd.repU = 23;
+        mGround.puddle = true;
+        mRd.puddle = true;
         mCloth = T((c, w, h) -> {
             Tex.noise(c, 150, 148, 138, 25);
             Tex.blot(c, "#5a1010", 6);
