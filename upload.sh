@@ -4,7 +4,7 @@ set -e
 cd "$(dirname "$0")"
 
 CFG="$HOME/.deadzone_gh"
-CONF="app/src/main/assets/config.js"
+CONF="app/src/main/java/com/deadzone/game/Config.java"
 
 for p in git curl; do
   command -v $p >/dev/null || pkg install -y $p
@@ -24,7 +24,7 @@ fi
 if grep -q "YOUR-SERVER" "$CONF"; then
   read -p "Relay server url (wss://...), Enter to skip: " S
   if [ -n "$S" ]; then
-    sed -i "s|wss://[^']*|$S|" "$CONF"
+    sed -i "s|wss://[^\"]*|$S|" "$CONF"
   fi
 fi
 

@@ -19,9 +19,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Download three.js
-        run: curl -fL -o app/src/main/assets/three.min.js https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
-
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'

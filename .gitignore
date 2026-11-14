@@ -3,5 +3,4 @@ build/
 local.properties
 .idea/
 *.iml
-app/src/main/assets/three.min.js
 node_modules/
