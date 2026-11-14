@@ -25,7 +25,8 @@ wss.on('connection', ws => {
     ws.alive = true;
     let m;
     try { m = JSON.parse(raw); } catch (e) { return; }
-    if (!m || m.t === 'ping') return;
+    if (!m) return;
+    if (m.t === 'ping') return put(ws, { t: 'pong', ts: m.ts });
 
     if (m.t === 'host') {
       const code = String(m.code || '').toUpperCase().slice(0, 4);

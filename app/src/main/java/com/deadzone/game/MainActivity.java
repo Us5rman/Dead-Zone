@@ -14,19 +14,22 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
+import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 
 public class MainActivity extends Activity implements Game.Ui {
+    private Settings set;
     private Game game;
     private GLSurfaceView gl;
     private Overlay overlay;
-    private View menu, over;
+    private View menu, settingsView, over, editBar;
     private TextView status, overText;
-    private Button again;
+    private Button again, resume;
     private EditText code;
     private float d;
 
@@ -38,37 +41,80 @@ public class MainActivity extends Activity implements Game.Ui {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         d = getResources().getDisplayMetrics().density;
+        set = new Settings(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (Build.VERSION.SDK_INT >= 28) {
             getWindow().getAttributes().layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         }
 
-        game = new Game(this);
+        game = new Game(this, set);
         gl = new GLSurfaceView(this);
         gl.setEGLContextClientVersion(2);
         gl.setRenderer(game);
         game.view = gl;
+        applyGraphics();
 
-        DisplayMetrics dm = getResources().getDisplayMetrics();
-        int big = Math.max(dm.widthPixels, dm.heightPixels), small = Math.min(dm.widthPixels, dm.heightPixels);
-        int fh = Math.min(260, small);
-        int fw = Math.round(big * (float) fh / small);
-        gl.getHolder().setFixedSize(fw, fh);
-
-        overlay = new Overlay(this, game);
+        overlay = new Overlay(this, game, set);
+        overlay.onPause = new Runnable() {
+            @Override
+            public void run() {
+                gl.queueEvent(new Runnable() {
+                    @Override
+                    public void run() {
+                        game.pause();
+                    }
+                });
+            }
+        };
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
         root.addView(gl, new FrameLayout.LayoutParams(-1, -1));
         root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
         menu = buildMenu();
+        settingsView = buildSettings();
         over = buildOver();
+        editBar = buildEditBar();
         root.addView(menu, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(settingsView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(over, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(editBar, new FrameLayout.LayoutParams(-1, -2));
+        settingsView.setVisibility(View.GONE);
         over.setVisibility(View.GONE);
+        editBar.setVisibility(View.GONE);
         setContentView(root);
     }
+
+    /** resolution, refresh rate and vsync */
+    private void applyGraphics() {
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        int big = Math.max(dm.widthPixels, dm.heightPixels), small = Math.min(dm.widthPixels, dm.heightPixels);
+        if (set.nativeRes) {
+            gl.getHolder().setSizeFromLayout();
+        } else {
+            int fh = Math.min(260, small);
+            gl.getHolder().setFixedSize(Math.round(big * (float) fh / small), fh);
+        }
+        float best = 60f;
+        try {
+            float[] rates = getWindowManager().getDefaultDisplay().getSupportedRefreshRates();
+            for (float r : rates) if (r > best) best = r;
+        } catch (Exception e) {
+            // keep 60
+        }
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.preferredRefreshRate = set.unlockFps ? best : 60f;
+        getWindow().setAttributes(lp);
+        gl.queueEvent(new Runnable() {
+            @Override
+            public void run() {
+                game.applyGl();
+            }
+        });
+    }
+
+    /* ---- small view helpers ---- */
 
     private TextView text(String s, float sp, int color, boolean mono) {
         TextView t = new TextView(this);
@@ -79,6 +125,13 @@ public class MainActivity extends Activity implements Game.Ui {
         return t;
     }
 
+    private void style(Button b, int fill, int stroke) {
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(fill);
+        bg.setStroke(dp(2), stroke);
+        b.setBackground(bg);
+    }
+
     private Button button(String s, float sp) {
         Button b = new Button(this);
         b.setAllCaps(false);
@@ -86,10 +139,7 @@ public class MainActivity extends Activity implements Game.Ui {
         b.setTextSize(sp);
         b.setTextColor(Color.WHITE);
         b.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xFF5A0F10);
-        bg.setStroke(dp(2), 0xFFB22A2A);
-        b.setBackground(bg);
+        style(b, 0xFF5A0F10, 0xFFB22A2A);
         b.setPadding(dp(18), dp(6), dp(18), dp(6));
         b.setMinHeight(0);
         b.setMinimumHeight(0);
@@ -98,12 +148,18 @@ public class MainActivity extends Activity implements Game.Ui {
 
     private TextView para(String s) {
         TextView t = text(s, 13, 0xFFd8d8d8, false);
-        t.setTextDirection(View.TEXT_DIRECTION_RTL);
+        t.setTextDirection(L.rtl() ? View.TEXT_DIRECTION_RTL : View.TEXT_DIRECTION_LTR);
         t.setGravity(Gravity.CENTER_HORIZONTAL);
         t.setLineSpacing(0, 1.2f);
         t.setPadding(0, dp(4), 0, dp(4));
         return t;
     }
+
+    private void onGl(Runnable r) {
+        gl.queueEvent(r);
+    }
+
+    /* ---- main menu ---- */
 
     private View buildMenu() {
         LinearLayout left = new LinearLayout(this);
@@ -112,19 +168,22 @@ public class MainActivity extends Activity implements Game.Ui {
         TextView title = text("DEAD ZONE", 34, 0xFFcc2222, true);
         title.setGravity(Gravity.CENTER);
         left.addView(title);
-        left.addView(para("شب است و مرده‌های متحرک همه‌جا هستند. تا جایی که می‌توانی زنده بمان."));
-        left.addView(para("جوی‌استیک چپ حرکت، کشیدن انگشت روی سمت راست نشانه‌گیری، دکمه FIRE شلیک. شلیک به سر ۳ برابر آسیب دارد."));
-        left.addView(para("چندنفره: HOST را بزن و کد ۴ حرفی را برای دوستانت بفرست؛ آن‌ها کد را وارد و JOIN می‌زنند (تا ۴ نفر)."));
+        left.addView(para(L.t("intro")));
+        left.addView(para(String.format(L.t("help"), L.t("b_fire"), L.t("b_jump"), L.t("b_dive"), L.t("b_run"))));
+        left.addView(para(L.t("multi")));
 
         LinearLayout right = new LinearLayout(this);
         right.setOrientation(LinearLayout.VERTICAL);
         right.setGravity(Gravity.CENTER);
 
-        Button solo = button("START (SOLO)", 16);
-        Button host = button("HOST ROOM", 16);
-        Button join = button("JOIN", 16);
+        resume = button(L.t("resume"), 16);
+        Button solo = button(L.t("start"), 16);
+        Button host = button(L.t("host"), 16);
+        Button join = button(L.t("join"), 16);
+        Button sett = button(L.t("settings"), 16);
+        resume.setVisibility(View.GONE);
         code = new EditText(this);
-        code.setHint("CODE");
+        code.setHint(L.t("code"));
         code.setHintTextColor(0xFF777777);
         code.setTextColor(Color.WHITE);
         code.setTextSize(18);
@@ -133,11 +192,12 @@ public class MainActivity extends Activity implements Game.Ui {
         code.setSingleLine(true);
         code.setFilters(new InputFilter[]{new InputFilter.AllCaps(), new InputFilter.LengthFilter(4)});
         status = text("", 13, 0xFFcccc88, false);
-        status.setTextDirection(View.TEXT_DIRECTION_RTL);
+        status.setTextDirection(L.rtl() ? View.TEXT_DIRECTION_RTL : View.TEXT_DIRECTION_LTR);
         status.setGravity(Gravity.CENTER);
 
         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, -2);
         bp.topMargin = dp(8);
+        right.addView(resume, bp);
         right.addView(solo, bp);
         right.addView(host, bp);
         LinearLayout row = new LinearLayout(this);
@@ -148,12 +208,25 @@ public class MainActivity extends Activity implements Game.Ui {
         jp.leftMargin = dp(8);
         row.addView(join, jp);
         right.addView(row, bp);
+        right.addView(sett, bp);
         right.addView(status, bp);
 
+        resume.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                menu.setVisibility(View.GONE);
+                onGl(new Runnable() {
+                    @Override
+                    public void run() {
+                        game.paused = false;
+                    }
+                });
+            }
+        });
         solo.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                gl.queueEvent(new Runnable() {
+                onGl(new Runnable() {
                     @Override
                     public void run() {
                         game.startSolo();
@@ -164,7 +237,7 @@ public class MainActivity extends Activity implements Game.Ui {
         host.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                gl.queueEvent(new Runnable() {
+                onGl(new Runnable() {
                     @Override
                     public void run() {
                         game.startHost();
@@ -178,12 +251,19 @@ public class MainActivity extends Activity implements Game.Ui {
                 final String c = code.getText().toString();
                 InputMethodManager im = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
                 if (im != null) im.hideSoftInputFromWindow(code.getWindowToken(), 0);
-                gl.queueEvent(new Runnable() {
+                onGl(new Runnable() {
                     @Override
                     public void run() {
                         game.startJoin(c);
                     }
                 });
+            }
+        });
+        sett.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                menu.setVisibility(View.GONE);
+                settingsView.setVisibility(View.VISIBLE);
             }
         });
 
@@ -203,31 +283,226 @@ public class MainActivity extends Activity implements Game.Ui {
         return sv;
     }
 
+    /* ---- settings ---- */
+
+    private Switch toggle(String label, boolean on, CompoundButton.OnCheckedChangeListener l) {
+        Switch s = new Switch(this);
+        s.setText(label);
+        s.setTextColor(Color.WHITE);
+        s.setTextSize(15);
+        s.setChecked(on);
+        s.setPadding(dp(4), dp(8), dp(4), dp(8));
+        s.setOnCheckedChangeListener(l);
+        return s;
+    }
+
+    private View buildSettings() {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(24), dp(12), dp(24), dp(12));
+        TextView title = text(L.t("s_title"), 24, 0xFFcc2222, true);
+        title.setGravity(Gravity.CENTER);
+        col.addView(title);
+
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+        col.addView(toggle(L.t("s_native"), set.nativeRes, new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                set.nativeRes = on;
+                set.save();
+                applyGraphics();
+            }
+        }), rowLp);
+        col.addView(toggle(L.t("s_unlock"), set.unlockFps, new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                set.unlockFps = on;
+                set.save();
+                applyGraphics();
+            }
+        }), rowLp);
+        col.addView(toggle(L.t("s_fps"), set.showFps, new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                set.showFps = on;
+                set.save();
+            }
+        }), rowLp);
+        col.addView(toggle(L.t("s_ping"), set.showPing, new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                set.showPing = on;
+                set.save();
+            }
+        }), rowLp);
+        col.addView(toggle(L.t("s_vsync"), set.vsync, new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                set.vsync = on;
+                set.save();
+                applyGraphics();
+            }
+        }), rowLp);
+        col.addView(toggle(L.t("s_roll"), set.rollAfterDive, new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                set.rollAfterDive = on;
+                set.save();
+            }
+        }), rowLp);
+
+        TextView lt = text(L.t("s_lang"), 15, 0xFFd8d8d8, false);
+        lt.setPadding(dp(4), dp(10), dp(4), dp(4));
+        col.addView(lt);
+        LinearLayout langs = new LinearLayout(this);
+        langs.setOrientation(LinearLayout.HORIZONTAL);
+        for (int i = 0; i < L.CODES.length; i++) {
+            final String lang = L.CODES[i];
+            Button b = button(L.NAMES[i], 14);
+            b.setPadding(dp(10), dp(6), dp(10), dp(6));
+            if (lang.equals(set.lang)) style(b, 0xFF8a1a1a, 0xFFffcc33);
+            b.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    set.lang = lang;
+                    set.save();
+                    L.set(lang);
+                    recreate();
+                }
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
+            lp.rightMargin = dp(6);
+            langs.addView(b, lp);
+        }
+        col.addView(langs, new LinearLayout.LayoutParams(-1, -2));
+
+        Button layout = button(L.t("s_layout"), 15);
+        Button back = button(L.t("s_back"), 15);
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, -2);
+        bp.topMargin = dp(12);
+        col.addView(layout, bp);
+        col.addView(back, bp);
+
+        layout.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                settingsView.setVisibility(View.GONE);
+                overlay.editMode = true;
+                overlay.selected = -1;
+                overlay.invalidate();
+                editBar.setVisibility(View.VISIBLE);
+            }
+        });
+        back.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                settingsView.setVisibility(View.GONE);
+                menu.setVisibility(View.VISIBLE);
+            }
+        });
+
+        ScrollView sv = new ScrollView(this);
+        sv.setBackgroundColor(0xF0000000);
+        sv.addView(col, new FrameLayout.LayoutParams(-1, -2));
+        return sv;
+    }
+
+    private View buildEditBar() {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setGravity(Gravity.CENTER_HORIZONTAL);
+        col.setBackgroundColor(0xAA000000);
+        col.setPadding(dp(8), dp(4), dp(8), dp(4));
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER);
+        Button minus = button("−", 16);
+        Button plus = button("+", 16);
+        Button reset = button(L.t("e_reset"), 14);
+        Button done = button(L.t("e_done"), 14);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.leftMargin = dp(6);
+        lp.rightMargin = dp(6);
+        row.addView(minus, lp);
+        row.addView(plus, lp);
+        row.addView(reset, lp);
+        row.addView(done, lp);
+        col.addView(row);
+        TextView hint = text(L.t("e_hint"), 12, 0xFFcccccc, false);
+        hint.setGravity(Gravity.CENTER);
+        hint.setTextDirection(L.rtl() ? View.TEXT_DIRECTION_RTL : View.TEXT_DIRECTION_LTR);
+        col.addView(hint);
+
+        minus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                overlay.changeSize(-.1f);
+            }
+        });
+        plus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                overlay.changeSize(.1f);
+            }
+        });
+        reset.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                overlay.resetLayout();
+            }
+        });
+        done.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                set.save();
+                overlay.editMode = false;
+                overlay.invalidate();
+                editBar.setVisibility(View.GONE);
+                settingsView.setVisibility(View.VISIBLE);
+            }
+        });
+        return col;
+    }
+
     private View buildOver() {
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setGravity(Gravity.CENTER);
         col.setBackgroundColor(0xCC000000);
-        TextView t = text("YOU DIED", 38, 0xFFcc2222, true);
+        TextView t = text(L.t("died"), 38, 0xFFcc2222, true);
         t.setGravity(Gravity.CENTER);
         overText = text("", 16, 0xFFd8d8d8, false);
         overText.setGravity(Gravity.CENTER);
-        overText.setTextDirection(View.TEXT_DIRECTION_RTL);
-        again = button("RESTART", 18);
+        overText.setTextDirection(L.rtl() ? View.TEXT_DIRECTION_RTL : View.TEXT_DIRECTION_LTR);
+        again = button(L.t("restart"), 18);
+        Button toMenu = button(L.t("menu"), 16);
         col.addView(t);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2);
         p.topMargin = dp(8);
         col.addView(overText, p);
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-2, -2);
-        bp.topMargin = dp(16);
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(220), -2);
+        bp.topMargin = dp(14);
         col.addView(again, bp);
+        col.addView(toMenu, bp);
         again.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                gl.queueEvent(new Runnable() {
+                onGl(new Runnable() {
                     @Override
                     public void run() {
                         game.again();
+                    }
+                });
+            }
+        });
+        toMenu.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onGl(new Runnable() {
+                    @Override
+                    public void run() {
+                        game.toMenu();
                     }
                 });
             }
@@ -236,6 +511,18 @@ public class MainActivity extends Activity implements Game.Ui {
     }
 
     /* ---- Game.Ui ---- */
+
+    @Override
+    public void showMenu(final boolean canResume) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                resume.setVisibility(canResume ? View.VISIBLE : View.GONE);
+                settingsView.setVisibility(View.GONE);
+                menu.setVisibility(View.VISIBLE);
+            }
+        });
+    }
 
     @Override
     public void hideMenu() {

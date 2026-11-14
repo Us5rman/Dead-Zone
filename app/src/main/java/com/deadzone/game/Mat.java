@@ -4,7 +4,7 @@ final class Mat {
     Tex tex;
     float r = 1, g = 1, b = 1, a = 1;
     float er, eg, eb;
-    boolean unlit, blend, additive, noFog, offset, puddle;
+    boolean unlit, blend, additive, noFog, offset;
     boolean depthWrite = true;
     float repU = 1, repV = 1;
 

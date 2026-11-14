@@ -12,48 +12,105 @@ import android.view.View;
 final class Overlay extends View {
     private final Game game;
     private final Hud hud;
+    private final Settings set;
     private final float d;
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-    private int jid = -1, lid = -1, fid = -1;
+    boolean editMode;
+    int selected = -1;
+    Runnable onPause;
+
+    private int jid = -1, lid = -1, fid = -1, dragId = -1;
     private float jx, jy, lx, ly;
 
-    Overlay(Context ctx, Game game) {
+    Overlay(Context ctx, Game game, Settings set) {
         super(ctx);
         this.game = game;
         this.hud = game.hud;
+        this.set = set;
         this.d = ctx.getResources().getDisplayMetrics().density;
         p.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL));
     }
 
-    private float fireX() {
-        return getWidth() - 74 * d - 42 * d;
+    private float bx(int i) {
+        return set.x[i] * getWidth();
     }
 
-    private float fireY() {
-        return getHeight() - 34 * d - 42 * d;
+    private float by(int i) {
+        return set.y[i] * getHeight();
     }
 
-    private float relX() {
-        return getWidth() - 156 * d - 27 * d;
+    private float br(int i) {
+        return Settings.BASE_R[i] * d * set.s[i];
     }
 
-    private float relY() {
-        return getHeight() - 128 * d - 27 * d;
+    private String label(int i) {
+        switch (i) {
+            case Settings.RUN:
+                return L.t("b_run");
+            case Settings.FIRE:
+                return L.t("b_fire");
+            case Settings.RELOAD:
+                return L.t("b_rel");
+            case Settings.JUMP:
+                return L.t("b_jump");
+            case Settings.DIVE:
+                return L.t("b_dive");
+            default:
+                return "";
+        }
     }
 
-    private float joyX() {
-        return 24 * d + 60 * d;
+    void changeSize(float delta) {
+        if (selected < 0) return;
+        set.s[selected] = Math.max(.6f, Math.min(2f, set.s[selected] + delta));
+        invalidate();
     }
 
-    private float joyY() {
-        return getHeight() - 24 * d - 60 * d;
+    void resetLayout() {
+        set.resetLayout();
+        invalidate();
+    }
+
+    private void controls(Canvas c) {
+        // joystick
+        float jxc = bx(Settings.JOY), jyc = by(Settings.JOY), jr = br(Settings.JOY);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(2 * d);
+        p.setColor(editMode && selected == Settings.JOY ? 0xCCffcc33 : 0x33ffffff);
+        c.drawCircle(jxc, jyc, jr, p);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0x44ffffff);
+        float kx = editMode ? 0 : (float) hud.stickX, ky = editMode ? 0 : (float) hud.stickY;
+        c.drawCircle(jxc + kx * jr * .65f, jyc + ky * jr * .65f, jr * .4f, p);
+
+        p.setTextAlign(Paint.Align.CENTER);
+        for (int i = 1; i < Settings.COUNT; i++) {
+            float x = bx(i), y = by(i), r = br(i);
+            boolean down = i == Settings.FIRE && fid >= 0 || i == Settings.RUN && game.sprint;
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(i == Settings.FIRE ? (down ? 0x66cc2222 : 0x33aa1111) : (down ? 0x66ffffff : 0x33ffffff));
+            c.drawCircle(x, y, r, p);
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(2 * d);
+            p.setColor(editMode && selected == i ? 0xFFffcc33 : (i == Settings.FIRE ? 0x55ff6666 : 0x44ffffff));
+            c.drawCircle(x, y, r, p);
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(0xCCffffff);
+            String t = label(i);
+            p.setTextSize(r * (t.length() > 4 ? .36f : .5f));
+            c.drawText(t, x, y + p.getTextSize() * .35f, p);
+        }
     }
 
     @Override
     protected void onDraw(Canvas c) {
-        if (!hud.playing) return;
         int w = getWidth(), h = getHeight();
+        if (editMode) {
+            controls(c);
+            return;
+        }
+        if (!hud.playing) return;
 
         if (hud.vig > 0) {
             int a = (int) (Math.min(1, hud.vig) * 190);
@@ -72,36 +129,51 @@ final class Overlay extends View {
         p.setColor(0xAAcccccc);
         p.setTextAlign(Paint.Align.LEFT);
         p.setTextSize(15 * d);
-        c.drawText("WAVE " + hud.wave, 16 * d, 44 * d, p);
-        c.drawText("KILLS " + hud.kills, 16 * d, 62 * d, p);
+        c.drawText(L.t("h_wave") + " " + hud.wave, 16 * d, 44 * d, p);
+        c.drawText(L.t("h_kills") + " " + hud.kills, 16 * d, 62 * d, p);
 
         p.setTextAlign(Paint.Align.RIGHT);
         p.setTextSize(22 * d);
         p.setColor(0xCCdddddd);
         c.drawText(hud.mag + " / " + hud.res, w - 16 * d, 32 * d, p);
-        String note = hud.reloading ? "RELOADING..." : (hud.mag == 0 && hud.res == 0 ? "NO AMMO" : "");
+        String note = hud.reloading ? L.t("h_rel") : (hud.mag == 0 && hud.res == 0 ? L.t("h_noammo") : "");
         if (note.length() > 0) {
             p.setTextSize(14 * d);
             p.setColor(0xFFcc3333);
             c.drawText(note, w - 16 * d, 52 * d, p);
         }
 
+        p.setTextAlign(Paint.Align.CENTER);
         String room = hud.room;
         if (room != null && room.length() > 0) {
-            p.setTextAlign(Paint.Align.CENTER);
             p.setTextSize(18 * d);
             p.setColor(0xFF99cc99);
             c.drawText(room, w / 2f, 28 * d, p);
+        }
+        StringBuilder sb = new StringBuilder();
+        if (set.showFps) sb.append("FPS ").append(hud.fps);
+        if (set.showPing) {
+            if (sb.length() > 0) sb.append("   ");
+            sb.append(L.t("h_ping")).append(' ');
+            sb.append(hud.ping >= 0 ? hud.ping + " ms" : "--");
+        }
+        if (sb.length() > 0) {
+            p.setTextSize(12 * d);
+            p.setColor(0xCCbbbbbb);
+            c.drawText(sb.toString(), w / 2f, 46 * d, p);
         }
 
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeWidth(Math.max(1f, d));
         p.setColor(0xB3ffffff);
         c.drawCircle(w / 2f, h / 2f, 3 * d, p);
+        p.setColor(0x55ffffff);
+        c.drawCircle(w / 2f, 66 * d, 14 * d, p);
+        p.setStyle(Paint.Style.FILL);
+        p.setTextSize(13 * d);
+        c.drawText("II", w / 2f, 66 * d + 4.5f * d, p);
 
         if (hud.banT > 0 && hud.banner != null) {
-            p.setStyle(Paint.Style.FILL);
-            p.setTextAlign(Paint.Align.CENTER);
             p.setTextSize(30 * d);
             int a = (int) (255 * Math.min(1, hud.banT / .6));
             p.setColor((a << 24) | 0x00cc3333);
@@ -109,37 +181,12 @@ final class Overlay extends View {
         }
 
         if (hud.dead) {
-            p.setStyle(Paint.Style.FILL);
-            p.setTextAlign(Paint.Align.CENTER);
             p.setTextSize(20 * d);
             p.setColor(0xFFcc3333);
-            c.drawText("YOU ARE DEAD  -  NEXT WAVE", w / 2f, h * .38f, p);
+            c.drawText(L.t("h_dead"), w / 2f, h * .38f, p);
         }
 
-        // sticks and buttons
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(2 * d);
-        p.setColor(0x33ffffff);
-        c.drawCircle(joyX(), joyY(), 60 * d, p);
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(0x44ffffff);
-        c.drawCircle(joyX() + (float) hud.stickX * 40 * d, joyY() + (float) hud.stickY * 40 * d, 24 * d, p);
-
-        p.setColor(fid >= 0 ? 0x66cc2222 : 0x33aa1111);
-        c.drawCircle(fireX(), fireY(), 42 * d, p);
-        p.setStyle(Paint.Style.STROKE);
-        p.setColor(0x55ff6666);
-        c.drawCircle(fireX(), fireY(), 42 * d, p);
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(0xAAffcccc);
-        p.setTextAlign(Paint.Align.CENTER);
-        p.setTextSize(14 * d);
-        c.drawText("FIRE", fireX(), fireY() + 5 * d, p);
-
-        p.setColor(0x33ffffff);
-        c.drawCircle(relX(), relY(), 27 * d, p);
-        p.setColor(0xAAffffff);
-        c.drawText("R", relX(), relY() + 5 * d, p);
+        controls(c);
     }
 
     private static float dist(float x, float y, float a, float b) {
@@ -147,15 +194,27 @@ final class Overlay extends View {
     }
 
     private void down(int id, float x, float y) {
-        if (fid < 0 && dist(x, y, fireX(), fireY()) <= 54 * d) {
+        float w = getWidth();
+        if (dist(x, y, w / 2f, 66 * d) <= 22 * d) {
+            if (onPause != null) onPause.run();
+            return;
+        }
+        if (fid < 0 && dist(x, y, bx(Settings.FIRE), by(Settings.FIRE)) <= br(Settings.FIRE) * 1.2f) {
             fid = id;
             game.fireIn = true;
-        } else if (dist(x, y, relX(), relY()) <= 36 * d) {
+        } else if (dist(x, y, bx(Settings.JUMP), by(Settings.JUMP)) <= br(Settings.JUMP) * 1.2f) {
+            game.jumpReq = true;
+        } else if (dist(x, y, bx(Settings.DIVE), by(Settings.DIVE)) <= br(Settings.DIVE) * 1.2f) {
+            game.diveReq = true;
+        } else if (dist(x, y, bx(Settings.RELOAD), by(Settings.RELOAD)) <= br(Settings.RELOAD) * 1.2f) {
             game.reloadReq = true;
-        } else if (x < getWidth() * .45f && jid < 0) {
+        } else if (dist(x, y, bx(Settings.RUN), by(Settings.RUN)) <= br(Settings.RUN) * 1.2f) {
+            game.sprintReq = true;
+        } else if (jid < 0 && dist(x, y, bx(Settings.JOY), by(Settings.JOY)) <= br(Settings.JOY) * 1.8f) {
             jid = id;
-            jx = x;
-            jy = y;
+            jx = bx(Settings.JOY);
+            jy = by(Settings.JOY);
+            move(id, x, y);
         } else if (lid < 0) {
             lid = id;
             lx = x;
@@ -165,7 +224,7 @@ final class Overlay extends View {
 
     private void move(int id, float x, float y) {
         if (id == jid) {
-            float dx = x - jx, dy = y - jy, m = 50 * d, len = (float) Math.hypot(dx, dy);
+            float dx = x - jx, dy = y - jy, m = br(Settings.JOY) * .85f, len = (float) Math.hypot(dx, dy);
             if (len > m) {
                 dx = dx / len * m;
                 dy = dy / len * m;
@@ -198,8 +257,35 @@ final class Overlay extends View {
         game.fireIn = false;
     }
 
+    private boolean edit(MotionEvent e) {
+        int a = e.getActionMasked();
+        float x = e.getX(), y = e.getY();
+        if (a == MotionEvent.ACTION_DOWN) {
+            int best = -1;
+            float bd = 1e9f;
+            for (int i = 0; i < Settings.COUNT; i++) {
+                float dd = dist(x, y, bx(i), by(i));
+                if (dd <= br(i) + 10 * d && dd < bd) {
+                    bd = dd;
+                    best = i;
+                }
+            }
+            selected = best;
+            dragId = best >= 0 ? e.getPointerId(0) : -1;
+            invalidate();
+        } else if (a == MotionEvent.ACTION_MOVE && selected >= 0 && dragId >= 0) {
+            set.x[selected] = Math.max(.04f, Math.min(.96f, x / getWidth()));
+            set.y[selected] = Math.max(.06f, Math.min(.94f, y / getHeight()));
+            invalidate();
+        } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
+            dragId = -1;
+        }
+        return true;
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent e) {
+        if (editMode) return edit(e);
         if (!hud.playing) {
             releaseAll();
             return true;

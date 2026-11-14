@@ -10,4 +10,6 @@ final class Hud {
     volatile double banT;
     volatile double vig;
     volatile double stickX, stickY;
+    volatile int fps;
+    volatile long ping = -1;
 }

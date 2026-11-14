@@ -35,9 +35,9 @@ final class Net {
         void hostGone();
 
         void closed();
-    }
 
-    private static final String WAIT = "در حال اتصال... اگر سرور خواب بوده تا یک دقیقه صبر کن";
+        void ping(long ms);
+    }
 
     private final Callbacks cb;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -88,13 +88,13 @@ final class Net {
         final int my = ++serial;
         ready = false;
         finished = false;
-        cb.status(host ? "در حال ساخت اتاق... اگر سرور خواب بوده تا یک دقیقه صبر کن" : WAIT);
+        cb.status(L.t(host ? "n_host" : "n_wait"));
         main.postDelayed(new Runnable() {
             @Override
             public void run() {
                 if (my == serial && !ready && !finished) {
                     finished = true;
-                    cb.status("اتصال برقرار نشد (مهلت تمام شد)");
+                    cb.status(L.t("n_timeout"));
                     close();
                 }
             }
@@ -126,13 +126,25 @@ final class Net {
         });
     }
 
+    private void schedulePing(final int my) {
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (my != serial || !ready) return;
+                WebSocket s = ws;
+                if (s != null) s.send(obj("t", "ping", "ts", System.nanoTime() / 1000000L).toString());
+                schedulePing(my);
+            }
+        }, 2000);
+    }
+
     private void lost() {
         if (ready) {
             ready = false;
             cb.closed();
         } else if (!finished) {
             finished = true;
-            cb.status("اتصال برقرار نشد");
+            cb.status(L.t("n_fail"));
         }
     }
 
@@ -147,10 +159,12 @@ final class Net {
         switch (t) {
             case "hosted":
                 ready = true;
+                schedulePing(serial);
                 cb.hosted();
                 break;
             case "joined":
                 ready = true;
+                schedulePing(serial);
                 cb.joined(m.optString("id"));
                 break;
             case "err":
@@ -159,15 +173,13 @@ final class Net {
                     cb.taken();
                 } else {
                     finished = true;
-                    cb.status("nohost".equals(e)
-                            ? "اتاق پیدا نشد. کد را چک کن و مطمئن شو میزبان بازی را باز دارد"
-                            : "خطا: " + e);
+                    cb.status("nohost".equals(e) ? L.t("n_noroom") : L.t("n_err") + e);
                     close();
                 }
                 break;
             case "full":
                 finished = true;
-                cb.status("اتاق پر است");
+                cb.status(L.t("n_full"));
                 close();
                 break;
             case "peer_join":
@@ -183,6 +195,10 @@ final class Net {
             case "g":
                 JSONObject g = m.optJSONObject("m");
                 if (g != null) cb.fromHost(g);
+                break;
+            case "pong":
+                long ts = m.optLong("ts", -1);
+                if (ts >= 0) cb.ping(System.nanoTime() / 1000000L - ts);
                 break;
             case "host_gone":
                 cb.hostGone();

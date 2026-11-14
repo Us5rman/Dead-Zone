@@ -22,11 +22,12 @@ final class World {
         Geo geo;
     }
 
-    final ArrayList<double[]> obs = new ArrayList<>();
+    final ArrayList<double[]> obs = new ArrayList<>();   // x, z, w, d, top
     final ArrayList<double[]> walls = new ArrayList<>();
     final ArrayList<Light> lights = new ArrayList<>();
     final ArrayList<Batch> solid = new ArrayList<>();
     final ArrayList<Batch> blend = new ArrayList<>();
+    final Geo stars;
 
     final Random rng = new Random();
     private final LinkedHashMap<Mat, FloatList> acc = new LinkedHashMap<>();
@@ -44,6 +45,15 @@ final class World {
             b.geo = new Geo(e.getValue().toArray());
             (b.mat.blend ? blend : solid).add(b);
         }
+        FloatList s = new FloatList();
+        for (int i = 0; i < 250; i++) {
+            double a = rnd(0, 6.28), el = rnd(.15, 1.4), r = 80;
+            s.add((float) (Math.cos(a) * Math.cos(el) * r));
+            s.add((float) (Math.sin(el) * r));
+            s.add((float) (Math.sin(a) * Math.cos(el) * r));
+            for (int k = 0; k < 5; k++) s.add(0);
+        }
+        stars = new Geo(s.toArray());
     }
 
     double rnd(double a, double b) {
@@ -104,8 +114,6 @@ final class World {
             Tex.rect(c, "#b8a020", 0, 30, 32, 3);
         }, 1);
         mRd.repU = 23;
-        mGround.puddle = true;
-        mRd.puddle = true;
         mCloth = T((c, w, h) -> {
             Tex.noise(c, 150, 148, 138, 25);
             Tex.blot(c, "#5a1010", 6);
@@ -154,7 +162,7 @@ final class World {
     void box(double x, double z, double w, double d, double h, Mat m) {
         mb(w, h, d, x, h / 2, z, m);
         solidBox(x, h / 2, z, w, h, d);
-        obs.add(new double[]{x, z, w, d});
+        obs.add(new double[]{x, z, w, d, h});
     }
 
     boolean freeAt(double x, double z) {
@@ -210,7 +218,7 @@ final class World {
         mb(sx, hh, sz, px, y0 + hh / 2, pz, mBrick);
         if (solid) {
             solidBox(px, y0 + hh / 2, pz, sx, hh, sz);
-            obs.add(new double[]{px, pz, sx, sz});
+            obs.add(new double[]{px, pz, sx, sz, y0 + hh});
         }
     }
 
@@ -321,7 +329,7 @@ final class World {
 
     private void tires(double x, double z) {
         for (int i = 0; i < 3; i++) mesh(Prim.cyl(.5, .5, .3, 8, false), mTire, x + (i == 2 ? .1 : 0), .15 + i * .3, z);
-        obs.add(new double[]{x, z, 1, 1});
+        obs.add(new double[]{x, z, 1, 1, .9});
     }
 
     private void dtree(double x, double z, double h) {
@@ -331,7 +339,7 @@ final class World {
                     Xf.make(0, h * .2, 0, 0, 0, 0, 1));
             bake(Prim.cyl(.03, .09, h * .45, 4, false), mWood, m);
         }
-        obs.add(new double[]{x, z, .6, .6});
+        obs.add(new double[]{x, z, .6, .6, 4});
     }
 
     private void corpse(double x, double z, double r) {
@@ -354,6 +362,9 @@ final class World {
         box(-46, 0, 2, 96, 6, mBrick);
         box(46, 0, 2, 96, 6, mBrick);
         for (int r = 0; r < 2; r++) mesh(Prim.plane(92, 8), mRd, 0, .03, 0, -PI / 2, 0, r == 1 ? PI / 2 : 0);
+        Mat moon = Mat.basic(0xdde6ff);
+        moon.noFog = true;
+        mesh(Prim.sphere(3, 8, 6), moon, -30, 32, -50);
 
         house(-20, -22, 14, 10, 4, g(d(3, 1.6, 1), d(10, 1.6, 1)), g(d(4, 2.6), d(10, 1.6, 1)), g(d(5, 1.6, 1)), g(d(5, 2.6)));
         house(22, -22, 12, 10, 4, g(d(6, 2.6)), g(d(3, 3.2), d(8, 1.6, 1)), g(d(5, 2.6)), g(d(4, 1.6, 1)));
