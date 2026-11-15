@@ -403,8 +403,17 @@ final class Sky {
         int[] vu = new int[1];
         GLES20.glGetIntegerv(GLES20.GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, vu, 0);
         vtf = vu[0] > 0;
-        rainProg = link((vtf ? "#define SHELTER 1\n" : "") + RAIN_VERT, RAIN_FRAG, new String[]{"aSeed", "aCorner"});
-        pudProg = link(PUD_VERT, PUD_FRAG, new String[]{"aP", "aUV"});
+        try {
+            rainProg = link((vtf ? "#define SHELTER 1\n" : "") + RAIN_VERT, RAIN_FRAG, new String[]{"aSeed", "aCorner"});
+        } catch (RuntimeException e) {
+            vtf = false;
+            rainProg = link(RAIN_VERT, RAIN_FRAG, new String[]{"aSeed", "aCorner"});
+        }
+        try {
+            pudProg = link(PUD_VERT, PUD_FRAG, new String[]{"aP", "aUV"});
+        } catch (RuntimeException e) {
+            pudProg = 0;
+        }
 
         sInv = GLES20.glGetUniformLocation(skyProg, "uInvVP");
         sCam = GLES20.glGetUniformLocation(skyProg, "uCam");
@@ -427,16 +436,16 @@ final class Sky {
         rMoonCol = GLES20.glGetUniformLocation(rainProg, "uMoonCol");
         rRain = GLES20.glGetUniformLocation(rainProg, "uRain");
         rSh = GLES20.glGetUniformLocation(rainProg, "uSh");
-        pVP = GLES20.glGetUniformLocation(pudProg, "uVP");
-        pCam = GLES20.glGetUniformLocation(pudProg, "uCam");
-        pTime = GLES20.glGetUniformLocation(pudProg, "uTime");
-        pGrow = GLES20.glGetUniformLocation(pudProg, "uGrow");
-        pRain = GLES20.glGetUniformLocation(pudProg, "uRain");
-        pFlash = GLES20.glGetUniformLocation(pudProg, "uFlash");
-        pFogCol = GLES20.glGetUniformLocation(pudProg, "uFogCol");
-        pFogDen = GLES20.glGetUniformLocation(pudProg, "uFogDen");
-        pHole = GLES20.glGetUniformLocation(pudProg, "uHole");
-        pMoonCol = GLES20.glGetUniformLocation(pudProg, "uMoonCol");
+        pVP = pudProg == 0 ? -1 : GLES20.glGetUniformLocation(pudProg, "uVP");
+        pCam = pudProg == 0 ? -1 : GLES20.glGetUniformLocation(pudProg, "uCam");
+        pTime = pudProg == 0 ? -1 : GLES20.glGetUniformLocation(pudProg, "uTime");
+        pGrow = pudProg == 0 ? -1 : GLES20.glGetUniformLocation(pudProg, "uGrow");
+        pRain = pudProg == 0 ? -1 : GLES20.glGetUniformLocation(pudProg, "uRain");
+        pFlash = pudProg == 0 ? -1 : GLES20.glGetUniformLocation(pudProg, "uFlash");
+        pFogCol = pudProg == 0 ? -1 : GLES20.glGetUniformLocation(pudProg, "uFogCol");
+        pFogDen = pudProg == 0 ? -1 : GLES20.glGetUniformLocation(pudProg, "uFogDen");
+        pHole = pudProg == 0 ? -1 : GLES20.glGetUniformLocation(pudProg, "uHole");
+        pMoonCol = pudProg == 0 ? -1 : GLES20.glGetUniformLocation(pudProg, "uMoonCol");
         int[] st = new int[1];
         GLES20.glGenTextures(1, st, 0);
         shTex = st[0];
@@ -627,7 +636,7 @@ final class Sky {
     static void drawPuddles(float[] vp, float[] cam) {
         if (pudDirty) uploadPuddles();
         float grow = Math.max(0f, Math.min(1f, (Gfx.wet - .3f) / .55f));
-        if (grow <= .02f || pudVerts == 0 || pudVbo == 0) return;
+        if (pudProg == 0 || grow <= .02f || pudVerts == 0 || pudVbo == 0) return;
         GLES20.glUseProgram(pudProg);
         GLES20.glUniformMatrix4fv(pVP, 1, false, vp, 0);
         GLES20.glUniform3f(pCam, cam[0], cam[1], cam[2]);

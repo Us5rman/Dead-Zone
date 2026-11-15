@@ -420,8 +420,13 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
         if (skyWorld != world) {
             skyWorld = world;
-            Sky.setShelter(world.shelterMap());
-            Sky.setPuddles(world.puddleSpots());
+            try {
+                Sky.setShelter(world.shelterMap());
+                Sky.setPuddles(world.puddleSpots());
+            } catch (RuntimeException e) {
+                Sky.setShelter(null);
+                Sky.setPuddles(null);
+            }
         }
         Sky.drawSky(vp, camPos, NOREF);
         Bolt.draw(vp, (float) boltI);
