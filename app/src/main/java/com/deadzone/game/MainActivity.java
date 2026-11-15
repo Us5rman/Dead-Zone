@@ -122,11 +122,13 @@ public class MainActivity extends Activity implements Game.Ui {
         root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
         menu = buildMenu();
         worldsView = buildWorlds();
+        multiView = buildMulti();
         settingsView = buildSettings();
         over = buildOver();
         editBar = buildEditBar();
         root.addView(menu, new FrameLayout.LayoutParams(-1, -1));
         root.addView(worldsView, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(multiView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(settingsView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(over, new FrameLayout.LayoutParams(-1, -1));
         root.addView(editBar, new FrameLayout.LayoutParams(-1, -2));
