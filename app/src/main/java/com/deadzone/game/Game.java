@@ -228,6 +228,13 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         }
     }
 
+    void applyGl() {
+        try {
+            EGL14.eglSwapInterval(EGL14.eglGetCurrentDisplay(), set.vsync ? 1 : 0);
+        } catch (Exception e) {
+        }
+    }
+
     private float[] camWorld() {
         return Xf.makeYXZR(cx, cy, cz, pitch + kc + dvPitch, yaw + ky, camRoll);
     }
