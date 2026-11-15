@@ -141,6 +141,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     private static final float[] NOREF = {0f, 0f, 0f};
     private static final float[] FAR = {60f, 100f, 150f, 220f};
     private int frameN;
+    private final float[] prevVp = new float[16];
+    private boolean prevVpSet;
     private double weatherT, rainSent = -1, rainClock;
     int bgHex = 0x070b10;
 
@@ -196,6 +198,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         Gfx.init();
         Sky.init();
         Bolt.init();
+        Post.init();
         applyGl();
         last = 0;
     }
@@ -207,6 +210,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         GLES20.glViewport(0, 0, w, h);
         Gfx.setRes(vw, vh);
         Sky.resize(vw, vh);
+        Post.resize(vw, vh);
     }
 
     @Override
@@ -324,6 +328,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             Sky.endReflect(1, vw, vh);
         }
 
+        boolean mb = set.motionBlur && Post.ok;
+        if (mb) Post.begin();
         float[] bg = Mat.rgb(bgHex);
         GLES20.glDepthMask(true);
         GLES20.glClearColor(bg[0], bg[1], bg[2], 1f);
@@ -331,13 +337,23 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
         world.draw(false);
         drawEntities(camPos, farD + 5);
-        gun.gun.draw(cw, false);
+        if (!mb) gun.gun.draw(cw, false);
 
         Sky.drawSky(vp, camPos, NOREF);
         Bolt.draw(vp, (float) boltI);
         world.draw(true);
         Sky.drawRain(vp, camPos);
+        if (mb) {
+            if (!prevVpSet) {
+                System.arraycopy(vp, 0, prevVp, 0, 16);
+                prevVpSet = true;
+            }
+            Post.end(vp, prevVp, camPos);
+            gun.gun.draw(cw, false);
+        }
         gun.gun.draw(cw, true);
+        System.arraycopy(vp, 0, prevVp, 0, 16);
+        prevVpSet = true;
     }
 
     private float[] pickMirror(float[] cam, float[] fwd) {

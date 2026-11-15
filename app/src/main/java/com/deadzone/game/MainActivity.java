@@ -412,6 +412,13 @@ public class MainActivity extends Activity implements Game.Ui {
                 applyGraphics();
             }
         }), rowLp);
+        col.addView(toggle(L.t("s_mb"), set.motionBlur, new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                set.motionBlur = on;
+                set.save();
+            }
+        }), rowLp);
         col.addView(toggle(L.t("s_fps"), set.showFps, new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton b, boolean on) {
