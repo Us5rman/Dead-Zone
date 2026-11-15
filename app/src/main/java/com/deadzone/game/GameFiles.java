@@ -69,6 +69,36 @@ final class GameFiles {
         }
     }
 
+    private static void copyAll(File from, File to) {
+        if (from.isDirectory()) {
+            to.mkdirs();
+            File[] k = from.listFiles();
+            if (k != null) for (File c : k) copyAll(c, new File(to, c.getName()));
+        } else if (!to.exists()) {
+            try {
+                InputStream i = new FileInputStream(from);
+                OutputStream o = new FileOutputStream(to);
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = i.read(buf)) > 0) o.write(buf, 0, n);
+                i.close();
+                o.close();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    static void migrateFallback(Context c) {
+        File d = c.getExternalFilesDir(null);
+        if (d == null) return;
+        File old = new File(d, "Dead Zone");
+        if (!old.exists()) return;
+        File real = new File(Environment.getExternalStorageDirectory(), "Dead Zone");
+        real.mkdirs();
+        copyAll(old, real);
+        deleteAll(old);
+    }
+
     static void deleteAll(File f) {
         File[] k = f.listFiles();
         if (k != null) for (File c : k) deleteAll(c);

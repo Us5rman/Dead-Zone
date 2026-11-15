@@ -59,7 +59,6 @@ public class MainActivity extends Activity implements Game.Ui {
         super.onCreate(state);
         d = getResources().getDisplayMetrics().density;
         set = new Settings(this);
-        ensureStorage();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (Build.VERSION.SDK_INT >= 28) {
             getWindow().getAttributes().layoutInDisplayCutoutMode =
@@ -265,12 +264,20 @@ public class MainActivity extends Activity implements Game.Ui {
         return e;
     }
 
+    private boolean askedStorage;
+
     private void ensureStorage() {
-        if (GameFiles.hasAccess(this)) return;
-        android.content.SharedPreferences sp = getSharedPreferences("perm", MODE_PRIVATE);
-        int asked = sp.getInt("asked", 0);
-        if (asked >= 3) return;
-        sp.edit().putInt("asked", asked + 1).apply();
+        if (GameFiles.hasAccess(this) || askedStorage) return;
+        askedStorage = true;
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Dead Zone folder")
+                .setMessage("Allow file access so your worlds, name and server files are saved in /storage/emulated/0/Dead Zone and survive updates.")
+                .setPositiveButton("Allow", (d, w) -> requestStorage())
+                .setNegativeButton("Not now", null)
+                .show();
+    }
+
+    private void requestStorage() {
         try {
             if (Build.VERSION.SDK_INT >= 30) {
                 Intent i = new Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
@@ -587,6 +594,15 @@ public class MainActivity extends Activity implements Game.Ui {
         col.addView(title);
 
         LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+        col.addView(text("Folder: " + GameFiles.root(this).getAbsolutePath(), 12, 0xFF999999, false));
+        if (!GameFiles.hasAccess(this)) {
+            Button grant = button("Allow folder access", 13);
+            grant.setOnClickListener(v -> requestStorage());
+            LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(dp(240), -2);
+            gp.topMargin = dp(6);
+            gp.bottomMargin = dp(6);
+            col.addView(grant, gp);
+        }
         col.addView(toggle(L.t("s_native"), set.nativeRes, new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton b, boolean on) {
@@ -971,6 +987,8 @@ public class MainActivity extends Activity implements Game.Ui {
     protected void onResume() {
         super.onResume();
         gl.onResume();
+        if (GameFiles.hasAccess(this)) GameFiles.migrateFallback(this);
+        else ensureStorage();
     }
 
     @Override
