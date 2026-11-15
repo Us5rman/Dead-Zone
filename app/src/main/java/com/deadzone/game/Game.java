@@ -642,7 +642,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         net.host(roomCode);
     }
 
+    volatile String myName = "Player";
+    private String joinCode = "";
+
     void startJoin(String code) {
+        joinCode = code;
         code = code == null ? "" : code.trim().toUpperCase();
         if (code.length() != 4) {
             ui.status(L.t("n_code"));
@@ -1992,6 +1996,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 hud.room = "";
                 worldId = null;
                 if (m.has("seed")) setWorld(m.optLong("seed"));
+                if (store != null) store.cacheServer(joinCode, worldSeed);
                 startGame(true);
                 wave = m.optInt("wave");
                 kills = m.optInt("kills");
