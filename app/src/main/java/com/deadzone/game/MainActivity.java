@@ -4,7 +4,9 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.media.AudioAttributes;
 import android.media.MediaPlayer;
+import android.media.SoundPool;
 import android.opengl.GLSurfaceView;
 import android.os.Build;
 import android.os.Bundle;
@@ -38,6 +40,8 @@ public class MainActivity extends Activity implements Game.Ui {
     private EditText code;
     private float d;
     private FrameLayout root;
+    private SoundPool pool;
+    private final java.util.HashMap<String, Integer> soundIds = new java.util.HashMap<>();
 
     private int dp(float v) {
         return Math.round(v * d);
@@ -54,6 +58,7 @@ public class MainActivity extends Activity implements Game.Ui {
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         }
 
+        initSounds();
         store = new WorldStore(this);
         game = new Game(this, set);
         game.store = store;
@@ -95,6 +100,31 @@ public class MainActivity extends Activity implements Game.Ui {
         over.setVisibility(View.GONE);
         editBar.setVisibility(View.GONE);
         setContentView(root);
+    }
+
+    /** short effects (multiplayer, black hole) loaded once */
+    private void initSounds() {
+        try {
+            pool = new SoundPool.Builder().setMaxStreams(10).setAudioAttributes(new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_GAME)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()).build();
+            String[] names = {"mp_join", "mp_far_1", "mp_far_2", "mp_far_3", "mp_near_1", "mp_near_2", "mp_near_3",
+                    "bh_grow_small", "bh_grow_big"};
+            for (String n : names) {
+                int res = getResources().getIdentifier(n, "raw", getPackageName());
+                if (res != 0) soundIds.put(n, pool.load(this, res, 1));
+            }
+        } catch (Exception e) {
+            pool = null;
+        }
+    }
+
+    @Override
+    public void sound(String name, float vol) {
+        SoundPool p = pool;
+        Integer id = soundIds.get(name);
+        if (p == null || id == null) return;
+        p.play(id, vol, vol, 1, 0, 1f);
     }
 
     /** rebuild every screen in place (language change) without restarting the game */
@@ -829,6 +859,7 @@ public class MainActivity extends Activity implements Game.Ui {
     @Override
     protected void onDestroy() {
         stopRain();
+        if (pool != null) pool.release();
         game.release();
         super.onDestroy();
     }

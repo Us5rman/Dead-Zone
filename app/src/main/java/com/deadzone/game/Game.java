@@ -35,6 +35,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         void thunder(int idx, float vol);
 
         void rain(float level);
+
+        void sound(String name, float vol);
     }
 
     static final int SOLO = 0, HOST = 1, CLIENT = 2;
@@ -112,7 +114,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     // input from the ui thread
     volatile double mvx, mvy;
     volatile boolean fireIn, reloadReq;
-    volatile boolean jumpReq, diveReq, sprintReq, slideReq, paused;
+    volatile boolean jumpReq, diveReq, sprintReq, slideReq, crawlReq, paused;
     private double lyaw, lpitch;
 
     // player
@@ -131,6 +133,9 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     double jy, vy, hvx, hvz, dvx, dvz, slideT, slideV0, crouchOff, dvPitch, camRoll, crawlPh, fovCur = 70;
     double wDive, wSlide, wCrawl, wRun;
     boolean grounded = true, diving, sprint, crawling, airFast;
+    // hood-slide: a dive at a low obstacle carries you over the top of it
+    double vaultT, vaultTop;
+    double[] vaultObs;
     private int frames;
     private long fpsT;
 
@@ -151,6 +156,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     private double weatherT, rainSent = -1, rainClock;
     int bgHex = 0x070b10;
     final ArrayList<Trail> trails = new ArrayList<>();
+    private World skyWorld;
     private static final double TRACER_SPEED = 380;
     private final Geo trailGeo = Geo.plane(1, 1);
     private final Mat mTracer = glowMat(0xffe2a8);
@@ -350,9 +356,15 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         drawEntities(camPos, farD + 5);
         if (!mb) gun.gun.draw(cw, false);
 
+        if (skyWorld != world) {
+            skyWorld = world;
+            Sky.setShelter(world.shelterMap());
+            Sky.setPuddles(world.puddleSpots());
+        }
         Sky.drawSky(vp, camPos, NOREF);
         Bolt.draw(vp, (float) boltI);
         world.draw(true);
+        Sky.drawPuddles(vp, camPos);
         drawEntitiesBlend();
         drawTrails(camPos);
         Sky.drawRain(vp, camPos);
@@ -724,6 +736,10 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         wave = w;
         saveProgress();
         ban(L.t("h_wave") + " " + wave);
+        if (w > 1 && b > a + .001) {
+            boolean tier = (a < 1.2 && b >= 1.2) || (a < 1.9 && b >= 1.9) || (a < 2.6 && b >= 2.6) || (a < 3.5 && b >= 3.5);
+            ui.sound(tier ? "bh_grow_big" : "bh_grow_small", tier ? 1f : .7f);
+        }
         if (a < 1.2 && b >= 1.2) ban("THE VOID GROWS  -  RUNNERS");
         else if (a < 1.9 && b >= 1.9) ban("THE VOID GROWS  -  BRUTES");
         else if (a < 2.6 && b >= 2.6) ban("THE VOID GROWS  -  VOIDLINGS");
@@ -938,6 +954,16 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         }
     }
 
+    /** other players' gunfire: close shots use the full recording, far ones the thin distant one */
+    private void shotSound(Remote q) {
+        if (q == null) return;
+        double d = Math.hypot(q.x - cx, q.z - cz);
+        if (d > 75) return;
+        int v = 1 + rng.nextInt(3);
+        if (d < 28) ui.sound("mp_near_" + v, (float) Math.max(.25, 1 - d / 28 * .65));
+        else ui.sound("mp_far_" + v, (float) Math.max(.12, .85 - (d - 28) / 47 * .7));
+    }
+
     private void remoteShot(String id, JSONObject m) {
         Remote q = pl.get(id);
         JSONArray o = m.optJSONArray("o"), d = m.optJSONArray("d");
@@ -947,6 +973,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         double endT = rayEnd(ox, oy, oz, dx, dy, dz);
         resolveHit(id, ox, oy, oz, dx, dy, dz);
         q.flashT = .06;
+        shotSound(q);
         double ex = ox + dx * endT, ey = oy + dy * endT, ez = oz + dz * endT;
         addTrailFromEye(ox, oy, oz, dx, dy, dz, ex, ey, ez);
         bc(Net.obj("t", "trail", "id", id, "o", arr3(ox, oy, oz), "e", arr3(ex, ey, ez)));
@@ -1083,7 +1110,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
     private void collide(double[] p, double r, double feet) {
         for (double[] o : world.obs) {
-            if (o[4] <= feet + .35) continue;
+            if (o[4] <= feet + .35 || o == vaultObs) continue;
             double cxx = Math.max(o[0] - o[2] / 2, Math.min(p[0], o[0] + o[2] / 2));
             double czz = Math.max(o[1] - o[3] / 2, Math.min(p[1], o[1] + o[3] / 2));
             double dx = p[0] - cxx, dz = p[1] - czz, d = Math.hypot(dx, dz);
@@ -1167,7 +1194,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             if (!pDead) {
                 if (crawling) {
                     crawling = false;
-                } else if (grounded && !diving) {
+                } else if (grounded && !diving && vaultT <= 0) {
                     vy = 5.6;
                     grounded = false;
                     slideT = 0;
@@ -1179,6 +1206,10 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 }
             }
         }
+        if (crawlReq) {
+            crawlReq = false;
+            toggleCrawl();
+        }
         if (diveReq) {
             diveReq = false;
             startDive();
@@ -1189,7 +1220,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         }
 
         double sn = Math.sin(yaw), cs = Math.cos(yaw);
-        boolean free = !diving && slideT <= 0;
+        boolean free = !diving && slideT <= 0 && vaultT <= 0;
         double fx = mvx, fz = -mvy;
         if (pDead) fx = fz = 0;
         double L = Math.hypot(fx, fz);
@@ -1211,6 +1242,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             double f = Math.exp(-(vy < 0 && near < .9 ? 3.2 : .15) * dt);
             hvx *= f;
             hvz *= f;
+        } else if (vaultT > 0) {
+            hvx = dvx * 6.3;
+            hvz = dvz * 6.3;
+            vaultT -= dt;
+            if (vaultT <= 0) endVault();
         } else {
             slideT -= dt;
             double p = Math.max(0, Math.min(1, 1 - slideT / SLIDE_TIME));
@@ -1229,7 +1265,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         cz = pp[1];
 
         double gnd = groundAt(cx, cz, .3, jy);
-        if (!grounded || jy > gnd + .001 || vy > 0) {
+        if (vaultT > 0) {
+            jy += (vaultTop - jy) * Math.min(1, dt * 16);
+            vy = 0;
+            grounded = true;
+        } else if (!grounded || jy > gnd + .001 || vy > 0) {
             vy -= 16 * dt;
             jy += vy * dt;
             if (jy <= gnd && vy <= 0) {
@@ -1247,20 +1287,20 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             grounded = true;
         }
 
-        double lowTarget = diving ? .55 : crawling ? .95 : slideT > 0 ? .8 : 0;
+        double lowTarget = diving ? .55 : crawling ? .95 : vaultT > 0 ? .85 : slideT > 0 ? .8 : 0;
         crouchOff += (lowTarget - crouchOff) * Math.min(1, dt * (lowTarget > crouchOff ? 14 : 6));
-        double pt = diving ? -.45 : slideT > 0 ? -.1 : 0;
+        double pt = diving ? -.45 : vaultT > 0 ? -.14 : slideT > 0 ? -.1 : 0;
         dvPitch += (pt - dvPitch) * Math.min(1, dt * 10);
         if (crawling && Math.hypot(fx, fz) > .1) crawlPh += dt * (fast ? 9 : 5.5);
-        double rt = slideT > 0 ? -.16 : diving ? .1 : crawling ? Math.sin(crawlPh) * .035 : 0;
+        double rt = vaultT > 0 ? -.3 : slideT > 0 ? -.16 : diving ? .1 : crawling ? Math.sin(crawlPh) * .035 : 0;
         camRoll += (rt - camRoll) * Math.min(1, dt * 9);
         wDive += ((diving ? 1 : 0) - wDive) * Math.min(1, dt * 12);
-        wSlide += ((slideT > 0 ? 1 : 0) - wSlide) * Math.min(1, dt * 12);
+        wSlide += (((slideT > 0 || vaultT > 0) ? 1 : 0) - wSlide) * Math.min(1, dt * 12);
         wCrawl += ((crawling ? 1 : 0) - wCrawl) * Math.min(1, dt * 10);
-        boolean runPose = moving && fast && !crawling && !diving && slideT <= 0 && !firing;
+        boolean runPose = moving && fast && !crawling && !diving && slideT <= 0 && vaultT <= 0 && !firing;
         wRun += ((runPose ? 1 : 0) - wRun) * Math.min(1, dt * 8);
         boolean runFov = (moving && fast && !crawling) || (!grounded && airFast && !diving);
-        double fovT = 70 + (runFov ? 9 : 0) + (diving ? 5 : 0) + (slideT > 0 ? 7 : 0);
+        double fovT = 70 + (runFov ? 9 : 0) + (diving ? 5 : 0) + ((slideT > 0 || vaultT > 0) ? 7 : 0);
         fovCur += (fovT - fovCur) * Math.min(1, dt * 6);
         if (moving && !crawling) bob += dt * sp * 1.6;
         cy = 1.7 + jy - crouchOff + (moving && !crawling ? Math.sin(bob) * (fast ? .095 : .072) : 0)
@@ -1656,10 +1696,12 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     /* ---- jumping, diving, menu ---- */
 
     private int mode() {
-        return diving ? 1 : crawling ? 2 : slideT > 0 ? 3 : 0;
+        return diving ? 1 : crawling ? 2 : (slideT > 0 || vaultT > 0) ? 3 : 0;
     }
 
     private void resetPhysics() {
+        vaultT = 0;
+        vaultObs = null;
         jy = vy = hvx = hvz = slideT = crouchOff = dvPitch = camRoll = crawlPh = 0;
         wDive = wSlide = wCrawl = wRun = 0;
         fovCur = 70;
@@ -1679,8 +1721,76 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         return g;
     }
 
+    /** crawl without diving: tap to drop down, tap again (or jump) to stand */
+    private void toggleCrawl() {
+        if (pDead || diving || slideT > 0 || vaultT > 0 || !grounded) return;
+        crawling = !crawling;
+        sprint = false;
+        if (crawling) {
+            crawlPh = 0;
+            crouchOff += .1;
+            sfx.noise(.12, .22, 500);
+        }
+    }
+
+    /**
+     * dive straight at a low obstacle you are close to and looking at: instead of
+     * crashing into it you go over the top, hood-slide style, and drop off the far side
+     */
+    private boolean tryVault() {
+        double lx = -Math.sin(yaw), lz = -Math.cos(yaw);
+        if (dvx * lx + dvz * lz < .75 || pitch > .75) return false;
+        double bestT = 1.7, bestExit = 0;
+        double[] hit = null;
+        for (double[] o : world.obs) {
+            double rise = o[4] - jy;
+            if (rise < .4 || rise > 1.5) continue;
+            double hw = o[2] / 2 + .3, hd = o[3] / 2 + .3;
+            double tmin = -1e9, tmax = 1e9;
+            boolean miss = false;
+            double[] c = {o[0], o[1]}, h = {hw, hd}, p = {cx, cz}, v = {dvx, dvz};
+            for (int a = 0; a < 2; a++) {
+                if (Math.abs(v[a]) < 1e-6) {
+                    if (Math.abs(p[a] - c[a]) > h[a]) miss = true;
+                } else {
+                    double t1 = (c[a] - h[a] - p[a]) / v[a], t2 = (c[a] + h[a] - p[a]) / v[a];
+                    tmin = Math.max(tmin, Math.min(t1, t2));
+                    tmax = Math.min(tmax, Math.max(t1, t2));
+                }
+            }
+            if (miss || tmax < Math.max(tmin, 0)) continue;
+            double entry = Math.max(tmin, 0);
+            if (entry < bestT) {
+                bestT = entry;
+                bestExit = tmax;
+                hit = o;
+            }
+        }
+        if (hit == null) return false;
+        vaultObs = hit;
+        vaultTop = hit[4];
+        vaultT = Math.max(.42, Math.min(1.2, (bestExit + .15) / 6.3));
+        slideT = 0;
+        airFast = false;
+        hvx = dvx * 6.3;
+        hvz = dvz * 6.3;
+        sfx.noise(.3, .35, 900);
+        sfx.tone(120, .14, Sfx.TRI, .18);
+        return true;
+    }
+
+    private void endVault() {
+        vaultObs = null;
+        vaultT = 0;
+        grounded = false;
+        vy = .4;
+        hvx *= .75;
+        hvz *= .75;
+        crouchOff += .12;
+    }
+
     private void startDive() {
-        if (pDead || diving || crawling || slideT > 0) return;
+        if (pDead || diving || crawling || slideT > 0 || vaultT > 0) return;
         double sn = Math.sin(yaw), cs = Math.cos(yaw);
         double fx = mvx, fz = -mvy, dx, dz;
         if (Math.hypot(fx, fz) > .15) {
@@ -1693,6 +1803,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         double l = Math.hypot(dx, dz);
         dvx = dx / l;
         dvz = dz / l;
+        if (grounded && tryVault()) return;
         double speed = Math.min(9.5, Math.max(7.5, Math.hypot(hvx, hvz) * 1.35));
         hvx = dvx * speed;
         hvz = dvz * speed;
@@ -1708,7 +1819,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     }
 
     private void startSlide() {
-        if (pDead || diving || crawling || slideT > 0 || !grounded) return;
+        if (pDead || diving || crawling || slideT > 0 || vaultT > 0 || !grounded) return;
         double sn = Math.sin(yaw), cs = Math.cos(yaw);
         double fx = mvx, fz = -mvy, dx, dz;
         if (Math.hypot(fx, fz) > .15) {
@@ -1876,6 +1987,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         switch (t) {
             case "welcome":
                 role = CLIENT;
+                ui.sound("mp_join", 1f);
                 myIdx = m.optInt("idx");
                 hud.room = "";
                 worldId = null;
@@ -1911,6 +2023,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                     addTrailFromEye(ox, oy, oz, dx / dl, dy / dl, dz / dl, ex, ey, ez);
                     Remote sq = pl.get(sid);
                     if (sq != null) sq.flashT = .06;
+                    shotSound(sq);
                 }
                 break;
             }
@@ -1953,6 +2066,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 role = HOST;
                 netId = "host";
                 myIdx = 0;
+                ui.sound("mp_join", 1f);
                 ui.status("");
                 pl.clear();
                 worldId = pendId;

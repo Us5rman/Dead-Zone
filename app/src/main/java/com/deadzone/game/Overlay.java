@@ -61,6 +61,8 @@ final class Overlay extends View {
                 return L.t("b_dive");
             case Settings.SLIDE:
                 return L.t("b_slide");
+            case Settings.CRAWL:
+                return L.t("b_crawl");
             default:
                 return "";
         }
@@ -92,7 +94,7 @@ final class Overlay extends View {
         p.setTextAlign(Paint.Align.CENTER);
         for (int i = 1; i < Settings.COUNT; i++) {
             float x = bx(i), y = by(i), r = br(i);
-            boolean down = i == Settings.FIRE && fid >= 0 || i == Settings.RUN && game.sprint;
+            boolean down = i == Settings.FIRE && fid >= 0 || i == Settings.RUN && game.sprint || i == Settings.CRAWL && game.crawling;
             p.setStyle(Paint.Style.FILL);
             p.setColor(i == Settings.FIRE ? (down ? 0x66cc2222 : 0x33aa1111) : (down ? 0x66ffffff : 0x33ffffff));
             c.drawCircle(x, y, r, p);
@@ -276,6 +278,8 @@ final class Overlay extends View {
             game.diveReq = true;
         } else if (dist(x, y, bx(Settings.SLIDE), by(Settings.SLIDE)) <= br(Settings.SLIDE) * 1.2f) {
             game.slideReq = true;
+        } else if (dist(x, y, bx(Settings.CRAWL), by(Settings.CRAWL)) <= br(Settings.CRAWL) * 1.2f) {
+            game.crawlReq = true;
         } else if (dist(x, y, bx(Settings.RELOAD), by(Settings.RELOAD)) <= br(Settings.RELOAD) * 1.2f) {
             game.reloadReq = true;
         } else if (dist(x, y, bx(Settings.RUN), by(Settings.RUN)) <= br(Settings.RUN) * 1.2f) {

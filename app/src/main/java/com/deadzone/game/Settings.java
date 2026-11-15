@@ -6,10 +6,10 @@ import android.content.SharedPreferences;
 import java.util.Locale;
 
 final class Settings {
-    static final int JOY = 0, RUN = 1, FIRE = 2, RELOAD = 3, JUMP = 4, DIVE = 5, SLIDE = 6, COUNT = 7;
-    static final float[] DX = {.14f, .30f, .88f, .74f, .76f, .92f, .60f};
-    static final float[] DY = {.74f, .84f, .72f, .55f, .82f, .46f, .80f};
-    static final float[] BASE_R = {60, 26, 42, 27, 30, 28, 28};
+    static final int JOY = 0, RUN = 1, FIRE = 2, RELOAD = 3, JUMP = 4, DIVE = 5, SLIDE = 6, CRAWL = 7, COUNT = 8;
+    static final float[] DX = {.14f, .30f, .88f, .74f, .76f, .92f, .60f, .45f};
+    static final float[] DY = {.74f, .84f, .72f, .55f, .82f, .46f, .80f, .87f};
+    static final float[] BASE_R = {60, 26, 42, 27, 30, 28, 28, 26};
 
     boolean nativeRes, showFps, showPing, motionBlur, vsync = true, autoRun;
     int renderDist = 1;

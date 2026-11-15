@@ -25,6 +25,7 @@ final class World {
     final ArrayList<double[]> obs = new ArrayList<>();   // x, z, w, d, top
     final ArrayList<double[]> glass = new ArrayList<>();
     final ArrayList<double[]> walls = new ArrayList<>();
+    final ArrayList<double[]> roofs = new ArrayList<>();   // x0, z0, x1, z1, top
     final ArrayList<Light> lights = new ArrayList<>();
     final ArrayList<Batch> solid = new ArrayList<>();
     final ArrayList<Batch> blend = new ArrayList<>();
@@ -167,6 +168,73 @@ final class World {
         obs.add(new double[]{x, z, w, d, h});
     }
 
+    /* ---- rain shelter height map: top of every block / wall / roof, so rain can land on them ---- */
+
+    static final float SH_MIN = -50f, SH_SIZE = 100f, SH_MAXH = 16f;
+    static final int SH_N = 200;
+    private byte[] shelter;
+
+    private void stamp(byte[] d, double x0, double z0, double x1, double z1, double top) {
+        if (top < .25) return;
+        int v = (int) Math.min(255, Math.round(top / SH_MAXH * 255));
+        int i0 = (int) Math.floor((x0 - SH_MIN) / SH_SIZE * SH_N), i1 = (int) Math.floor((x1 - SH_MIN) / SH_SIZE * SH_N);
+        int j0 = (int) Math.floor((z0 - SH_MIN) / SH_SIZE * SH_N), j1 = (int) Math.floor((z1 - SH_MIN) / SH_SIZE * SH_N);
+        i0 = Math.max(0, i0);
+        j0 = Math.max(0, j0);
+        i1 = Math.min(SH_N - 1, i1);
+        j1 = Math.min(SH_N - 1, j1);
+        for (int j = j0; j <= j1; j++) {
+            for (int i = i0; i <= i1; i++) {
+                if ((d[j * SH_N + i] & 255) < v) d[j * SH_N + i] = (byte) v;
+            }
+        }
+    }
+
+    /** SH_N x SH_N bytes, row = z, column = x, value = top height / SH_MAXH * 255 */
+    synchronized byte[] shelterMap() {
+        if (shelter != null) return shelter;
+        byte[] d = new byte[SH_N * SH_N];
+        for (double[] o : obs) stamp(d, o[0] - o[2] / 2, o[1] - o[3] / 2, o[0] + o[2] / 2, o[1] + o[3] / 2, o[4]);
+        for (double[] b : walls) stamp(d, b[0], b[2], b[3], b[5], b[4]);
+        for (double[] r : roofs) stamp(d, r[0], r[1], r[2], r[3], r[4]);
+        shelter = d;
+        return d;
+    }
+
+    private boolean openGround(byte[] d, double x, double z, double r) {
+        int i0 = (int) Math.floor((x - r - SH_MIN) / SH_SIZE * SH_N), i1 = (int) Math.floor((x + r - SH_MIN) / SH_SIZE * SH_N);
+        int j0 = (int) Math.floor((z - r - SH_MIN) / SH_SIZE * SH_N), j1 = (int) Math.floor((z + r - SH_MIN) / SH_SIZE * SH_N);
+        if (i0 < 0 || j0 < 0 || i1 >= SH_N || j1 >= SH_N) return false;
+        for (int j = j0; j <= j1; j++) for (int i = i0; i <= i1; i++) if (d[j * SH_N + i] != 0) return false;
+        return true;
+    }
+
+    /** rain puddles on open ground: x, z, radius, seed (flat list of 4 floats each) */
+    float[] puddleSpots() {
+        byte[] d = shelterMap();
+        Random pr = new Random(4242L + obs.size() * 31L + lights.size());
+        float[] out = new float[20 * 4];
+        int n = 0;
+        for (int tries = 0; tries < 900 && n < 20; tries++) {
+            double x = (pr.nextDouble() * 2 - 1) * 40, z = (pr.nextDouble() * 2 - 1) * 40;
+            double r = .6 + pr.nextDouble() * .95;
+            if (!openGround(d, x, z, r + .6)) continue;
+            boolean close = false;
+            for (int k = 0; k < n; k++) {
+                if (Math.hypot(out[k * 4] - x, out[k * 4 + 1] - z) < out[k * 4 + 2] + r + 2) close = true;
+            }
+            if (close) continue;
+            out[n * 4] = (float) x;
+            out[n * 4 + 1] = (float) z;
+            out[n * 4 + 2] = (float) r;
+            out[n * 4 + 3] = pr.nextFloat();
+            n++;
+        }
+        float[] res = new float[n * 4];
+        System.arraycopy(out, 0, res, 0, n * 4);
+        return res;
+    }
+
     boolean freeAt(double x, double z) {
         for (double[] o : obs) {
             if (Math.abs(x - o[0]) < o[2] / 2 + 1 && Math.abs(z - o[1]) < o[3] / 2 + 1) return false;
@@ -252,6 +320,7 @@ final class World {
         wallG(cx - w / 2, cz - d / 2, d, false, we, h);
         wallG(cx + w / 2, cz - d / 2, d, false, e, h);
         mb(w + .8, .4, d + .8, cx, h + .2, cz, mConc);
+        roofs.add(new double[]{cx - (w + .8) / 2, cz - (d + .8) / 2, cx + (w + .8) / 2, cz + (d + .8) / 2, h + .4});
         mesh(Prim.plane(w, d), mFloor, cx, .05, cz, -PI / 2, 0, 0);
     }
 
