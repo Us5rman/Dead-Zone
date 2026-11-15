@@ -16,7 +16,6 @@ final class Gfx {
     private static int uVP, uModel, uTex, uHasTex, uColor, uEmis, uUnlit, uFogOn, uPS, uWet, uPud, uRefPass, uRes, uTimeU, uNoise, uRefl, uRefPl, uThr, uGlass, uMirPl, uMirOn, uMir, uFlashU, uBoltDir, uBhDir, uBhSize;
     private static int uAmb, uDirV, uDirCol, uCam, uFogCol, uFogDen;
     private static int uNumPl, uPlPos, uPlCol, uPlRange;
-    private static int uSpPos, uSpDir, uSpCol, uSpCos0, uSpCos1, uSpRange;
 
     private static final String VERT =
             "uniform mat4 uVP;\n" +
@@ -230,12 +229,6 @@ final class Gfx {
         uPlPos = loc("uPlPos");
         uPlCol = loc("uPlCol");
         uPlRange = loc("uPlRange");
-        uSpPos = loc("uSpPos");
-        uSpDir = loc("uSpDir");
-        uSpCol = loc("uSpCol");
-        uSpCos0 = loc("uSpCos0");
-        uSpCos1 = loc("uSpCos1");
-        uSpRange = loc("uSpRange");
         GLES20.glEnableVertexAttribArray(aPos);
         GLES20.glEnableVertexAttribArray(aNor);
         GLES20.glEnableVertexAttribArray(aUv);
@@ -252,7 +245,7 @@ final class Gfx {
     }
 
     /** per frame setup: lights, fog, camera */
-    static void frame(float[] vp, float[] cam, float[] spotDir, float[] amb, float[] plPos, float[] plCol,
+    static void frame(float[] vp, float[] cam, float[] amb, float[] plPos, float[] plCol,
                       float[] plRange, int n) {
         GLES20.glUseProgram(prog);
         GLES20.glUniformMatrix4fv(uVP, 1, false, vp, 0);

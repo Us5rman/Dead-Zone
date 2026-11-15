@@ -37,6 +37,7 @@ public class MainActivity extends Activity implements Game.Ui {
     private Button again, resume;
     private EditText code;
     private float d;
+    private FrameLayout root;
 
     private int dp(float v) {
         return Math.round(v * d);
@@ -75,7 +76,7 @@ public class MainActivity extends Activity implements Game.Ui {
             }
         };
 
-        FrameLayout root = new FrameLayout(this);
+        root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
         root.addView(gl, new FrameLayout.LayoutParams(-1, -1));
         root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
@@ -94,6 +95,43 @@ public class MainActivity extends Activity implements Game.Ui {
         over.setVisibility(View.GONE);
         editBar.setVisibility(View.GONE);
         setContentView(root);
+    }
+
+    /** rebuild every screen in place (language change) without restarting the game */
+    private void rebuildUi() {
+        int resumeVis = resume.getVisibility();
+        CharSequence st = status.getText();
+        int bg = menu.getBackground() instanceof android.graphics.drawable.ColorDrawable
+                ? ((android.graphics.drawable.ColorDrawable) menu.getBackground()).getColor() : 0xFF000000;
+        int menuVis = menu.getVisibility(), setVis = settingsView.getVisibility(), worldsVis = worldsView.getVisibility();
+        int overVis = over.getVisibility(), editVis = editBar.getVisibility();
+        CharSequence ot = overText.getText();
+        int againVis = again.getVisibility();
+        root.removeView(menu);
+        root.removeView(worldsView);
+        root.removeView(settingsView);
+        root.removeView(over);
+        root.removeView(editBar);
+        menu = buildMenu();
+        worldsView = buildWorlds();
+        settingsView = buildSettings();
+        over = buildOver();
+        editBar = buildEditBar();
+        root.addView(menu, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(worldsView, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(settingsView, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(over, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(editBar, new FrameLayout.LayoutParams(-1, -2));
+        menu.setBackgroundColor(bg);
+        menu.setVisibility(menuVis);
+        settingsView.setVisibility(setVis);
+        worldsView.setVisibility(worldsVis);
+        over.setVisibility(overVis);
+        editBar.setVisibility(editVis);
+        resume.setVisibility(resumeVis);
+        status.setText(st);
+        overText.setText(ot);
+        again.setVisibility(againVis);
     }
 
     /** resolution, refresh rate and vsync */
@@ -452,7 +490,7 @@ public class MainActivity extends Activity implements Game.Ui {
         TextView rdT = text(L.t("s_rd"), 15, 0xFFd8d8d8, false);
         rdT.setPadding(dp(4), dp(10), dp(4), dp(4));
         col.addView(rdT);
-        LinearLayout rds = new LinearLayout(this);
+        final LinearLayout rds = new LinearLayout(this);
         rds.setOrientation(LinearLayout.HORIZONTAL);
         for (int i = 0; i < 4; i++) {
             final int idx = i;
@@ -464,7 +502,10 @@ public class MainActivity extends Activity implements Game.Ui {
                 public void onClick(View v) {
                     set.renderDist = idx;
                     set.save();
-                    recreate();
+                    for (int k = 0; k < rds.getChildCount(); k++) {
+                        if (k == idx) style((Button) rds.getChildAt(k), 0xFF8a1a1a, 0xFFffcc33);
+                        else style((Button) rds.getChildAt(k), 0xFF5A0F10, 0xFFB22A2A);
+                    }
                 }
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
@@ -489,7 +530,7 @@ public class MainActivity extends Activity implements Game.Ui {
                     set.lang = lang;
                     set.save();
                     L.set(lang);
-                    recreate();
+                    rebuildUi();
                 }
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);

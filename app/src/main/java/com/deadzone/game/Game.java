@@ -294,7 +294,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         float[] camPos = {(float) cx, (float) cy, (float) cz};
         Gfx.flash = (float) Math.max(0, Math.min(1, (ambI - .9) / 1.5));
         Gfx.bh = (float) bhCur;
-        Gfx.frame(vp, camPos, fwd, amb, plPos, plCol, plRange, n);
+        Gfx.frame(vp, camPos, amb, plPos, plCol, plRange, n);
 
         frameN++;
         float farD = FAR[Math.max(0, Math.min(3, set.renderDist))];
@@ -1173,8 +1173,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                     slideT = 0;
                     airFast = stick > .1 && (sprint || stick > .95);
                     if (airFast) {
-                        hvx *= 1.3;
-                        hvz *= 1.3;
+                        hvx *= 1.08;
+                        hvz *= 1.08;
                     }
                 }
             }
@@ -1199,7 +1199,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         }
         boolean fast = sprint || (set.autoRun && stick > .95);
         double sp = crawling ? (fast ? 3.0 : 1.6) : (fast ? 6.5 : 4);
-        if (!grounded && airFast) sp *= 1.3;
+        if (!grounded && airFast) sp *= 1.08;
         boolean moving = Math.hypot(fx, fz) > .1 && free && grounded;
         if (free) {
             double tx = (fx * cs - fz * sn) * sp, tz = (-fx * sn - fz * cs) * sp;
@@ -1259,10 +1259,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         wCrawl += ((crawling ? 1 : 0) - wCrawl) * Math.min(1, dt * 10);
         boolean runPose = moving && fast && !crawling && !diving && slideT <= 0 && !firing;
         wRun += ((runPose ? 1 : 0) - wRun) * Math.min(1, dt * 8);
-        double fovT = 70 + (moving && fast && !crawling ? 6 : 0) + (diving ? 5 : 0) + (slideT > 0 ? 7 : 0);
+        boolean runFov = (moving && fast && !crawling) || (!grounded && airFast && !diving);
+        double fovT = 70 + (runFov ? 9 : 0) + (diving ? 5 : 0) + (slideT > 0 ? 7 : 0);
         fovCur += (fovT - fovCur) * Math.min(1, dt * 6);
         if (moving && !crawling) bob += dt * sp * 1.6;
-        cy = 1.7 + jy - crouchOff + (moving && !crawling ? Math.sin(bob) * .06 : 0)
+        cy = 1.7 + jy - crouchOff + (moving && !crawling ? Math.sin(bob) * (fast ? .095 : .072) : 0)
                 + (crawling && Math.hypot(fx, fz) > .1 ? Math.sin(crawlPh * 2) * .015 : 0);
 
         kzv += (-320 * kz - 24 * kzv) * dt;
@@ -1331,12 +1332,12 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             slp = mag <= 0 ? 1 : (sl < .035 ? sl / .035 : sl < .1 ? 1 - (sl - .035) / .065 : 0);
         }
         double rs = Math.sin(bob), rc = Math.cos(bob);
-        gx += wRun * (.01 + Math.sin(bob * .5) * .03);
-        gy += wRun * (-.07 + Math.abs(rc) * .03);
-        gz += wRun * (.10 + Math.sin(bob * 2) * .012);
-        grx += wRun * (.95 + Math.cos(bob * 2) * .05);
+        gx += wRun * (.07 + Math.sin(bob * .5) * .05);
+        gy += wRun * (-.02 + Math.abs(rc) * .05);
+        gz += wRun * (.10 + Math.sin(bob * 2) * .02);
+        grx += wRun * (.95 + Math.cos(bob * 2) * .09);
         gry += wRun * .35;
-        grz += wRun * (-.12 + rs * .06);
+        grz += wRun * (-.12 + rs * .10);
         gun.lh.py = lhy;
         gun.lh.pz = lhz;
         double c1 = Math.sin(crawlPh), c2 = Math.cos(crawlPh);
@@ -1354,8 +1355,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         gun.mag.visible = magVis;
         gun.mag.py = -.14 - dr * dr * (3 - 2 * dr) * .3;
         Node g = gun.gun;
-        g.px = .17 + (moving ? Math.sin(bob * .5) * .015 : 0) + gx;
-        g.py = -.10 + (moving ? Math.abs(Math.cos(bob)) * .015 : 0) + gy;
+        g.px = .17 + (moving ? Math.sin(bob * .5) * .018 : 0) + gx;
+        g.py = -.10 + (moving ? Math.abs(Math.cos(bob)) * .018 : 0) + gy;
         g.pz = -.45 + kz + gz;
         g.rx = kr + grx;
         g.ry = .07 + gry + kro * .3;
