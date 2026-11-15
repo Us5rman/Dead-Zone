@@ -4,9 +4,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 
 final class Nav {
-    static final int N = 96;
+    static final int N = 304;
     static final int INF = 30000;
-    private static final double ORG = -48, CELL = 1;
+    private static final double ORG = -152, CELL = 1;
     private static final int[] DI = {1, -1, 0, 0, 1, 1, -1, -1};
     private static final int[] DJ = {0, 0, 1, -1, 1, -1, 1, -1};
 
@@ -77,6 +77,7 @@ final class Nav {
         int s = nearestFree(cell(tx), cell(tz), 6);
         if (s < 0) return;
         int head = 0, tail = 0;
+        int si = s % N, sj = s / N;
         f.d[s] = 0;
         queue[tail++] = s;
         while (head < tail) {
@@ -86,6 +87,7 @@ final class Nav {
             for (int k = 0; k < 8; k++) {
                 if (!canMove(ci, cj, k)) continue;
                 int n = (cj + DJ[k]) * N + ci + DI[k];
+                if (Math.abs(ci + DI[k] - si) > 50 || Math.abs(cj + DJ[k] - sj) > 50) continue;
                 if (f.d[n] > nd) {
                     f.d[n] = nd;
                     queue[tail++] = n;

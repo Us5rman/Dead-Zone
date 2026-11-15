@@ -17,18 +17,27 @@ final class World {
         boolean flick;
     }
 
+    static final int HALF = 140;
+    private static final int CH = 48;
+
     static final class Batch {
         Mat mat;
         Geo geo;
+        double cx, cz;
+        boolean always = true;
     }
 
     final ArrayList<double[]> obs = new ArrayList<>();   // x, z, w, d, top
     final ArrayList<double[]> glass = new ArrayList<>();
     final ArrayList<double[]> walls = new ArrayList<>();
-    final ArrayList<double[]> roofs = new ArrayList<>();   // x0, z0, x1, z1, top
+    final ArrayList<double[]> roofs = new ArrayList<>();
     final ArrayList<Light> lights = new ArrayList<>();
     final ArrayList<Batch> solid = new ArrayList<>();
     final ArrayList<Batch> blend = new ArrayList<>();
+    final ArrayList<double[]> spots = new ArrayList<>();
+    final ArrayList<double[]> roads = new ArrayList<>();
+    private final java.util.HashMap<Integer, LinkedHashMap<Mat, FloatList>> chunks = new java.util.HashMap<>();
+    private boolean always;
 
     final Random rng;
     final long seed;
@@ -50,6 +59,18 @@ final class World {
             b.geo = new Geo(e.getValue().toArray());
             (b.mat.blend ? blend : solid).add(b);
         }
+        for (java.util.Map.Entry<Integer, LinkedHashMap<Mat, FloatList>> ce : chunks.entrySet()) {
+            int ci = ce.getKey() / 1000, cj = ce.getKey() % 1000;
+            for (java.util.Map.Entry<Mat, FloatList> e : ce.getValue().entrySet()) {
+                Batch b = new Batch();
+                b.mat = e.getKey();
+                b.geo = new Geo(e.getValue().toArray());
+                b.always = false;
+                b.cx = (ci + .5) * CH - HALF - 8;
+                b.cz = (cj + .5) * CH - HALF - 8;
+                (b.mat.blend ? blend : solid).add(b);
+            }
+        }
     }
 
     double rnd(double a, double b) {
@@ -69,7 +90,7 @@ final class World {
         mGround = T((c, w, h) -> {
             Tex.noise(c, 62, 70, 44, 55);
             Tex.blot(c, "#2c2a1c", 10);
-        }, 100);
+        }, 225);
         mBrick = T((c, w, h) -> {
             Tex.noise(c, 112, 62, 50, 30);
             for (int y = 0; y < 64; y += 16) {
@@ -114,7 +135,7 @@ final class World {
             Tex.noise(c, 42, 42, 44, 25);
             Tex.rect(c, "#b8a020", 0, 30, 32, 3);
         }, 1);
-        mRd.repU = 23;
+        mRd.repU = 70;
         mGround.puddle = true;
         mRd.puddle = true;
         mCloth = T((c, w, h) -> {
@@ -133,10 +154,22 @@ final class World {
     /* ---- mesh helpers ---- */
 
     private void bake(float[] prim, Mat m, float[] model) {
-        FloatList l = acc.get(m);
+        LinkedHashMap<Mat, FloatList> target = acc;
+        if (!always) {
+            int ci = (int) Math.floor((model[12] + HALF + 8) / CH), cj = (int) Math.floor((model[14] + HALF + 8) / CH);
+            ci = Math.max(0, Math.min(999, ci));
+            cj = Math.max(0, Math.min(999, cj));
+            LinkedHashMap<Mat, FloatList> got = chunks.get(ci * 1000 + cj);
+            if (got == null) {
+                got = new LinkedHashMap<>();
+                chunks.put(ci * 1000 + cj, got);
+            }
+            target = got;
+        }
+        FloatList l = target.get(m);
         if (l == null) {
             l = new FloatList();
-            acc.put(m, l);
+            target.put(m, l);
         }
         Xf.bake(l, prim, model, m.repU, m.repV);
     }
@@ -168,10 +201,9 @@ final class World {
         obs.add(new double[]{x, z, w, d, h});
     }
 
-    /* ---- rain shelter height map: top of every block / wall / roof, so rain can land on them ---- */
 
-    static final float SH_MIN = -50f, SH_SIZE = 100f, SH_MAXH = 16f;
-    static final int SH_N = 200;
+    static final float SH_MIN = -150f, SH_SIZE = 300f, SH_MAXH = 16f;
+    static final int SH_N = 600;
     private byte[] shelter;
 
     private void stamp(byte[] d, double x0, double z0, double x1, double z1, double top) {
@@ -190,7 +222,6 @@ final class World {
         }
     }
 
-    /** SH_N x SH_N bytes, row = z, column = x, value = top height / SH_MAXH * 255 */
     synchronized byte[] shelterMap() {
         if (shelter != null) return shelter;
         byte[] d = new byte[SH_N * SH_N];
@@ -209,14 +240,13 @@ final class World {
         return true;
     }
 
-    /** rain puddles on open ground: x, z, radius, seed (flat list of 4 floats each) */
     float[] puddleSpots() {
         byte[] d = shelterMap();
         Random pr = new Random(4242L + obs.size() * 31L + lights.size());
-        float[] out = new float[20 * 4];
+        float[] out = new float[60 * 4];
         int n = 0;
-        for (int tries = 0; tries < 900 && n < 20; tries++) {
-            double x = (pr.nextDouble() * 2 - 1) * 40, z = (pr.nextDouble() * 2 - 1) * 40;
+        for (int tries = 0; tries < 3000 && n < 60; tries++) {
+            double x = (pr.nextDouble() * 2 - 1) * (HALF - 12), z = (pr.nextDouble() * 2 - 1) * (HALF - 12);
             double r = .6 + pr.nextDouble() * .95;
             if (!openGround(d, x, z, r + .6)) continue;
             boolean close = false;
@@ -421,7 +451,8 @@ final class World {
 
     private void tires(double x, double z) {
         for (int i = 0; i < 3; i++) mesh(Prim.cyl(.5, .5, .3, 8, false), mTire, x + (i == 2 ? .1 : 0), .15 + i * .3, z);
-        obs.add(new double[]{x, z, 1, 1, .9});
+        obs.add(new double[]{x, z, 1, 1, .6});
+        obs.add(new double[]{x + .1, z, 1, 1, .9});
     }
 
     private void dtree(double x, double z, double h) {
@@ -431,7 +462,7 @@ final class World {
                     Xf.make(0, h * .2, 0, 0, 0, 0, 1));
             bake(Prim.cyl(.03, .09, h * .45, 4, false), mWood, m);
         }
-        obs.add(new double[]{x, z, .6, .6, 4});
+        obs.add(new double[]{x, z, .6, .6, h});
     }
 
     private void corpse(double x, double z, double r) {
@@ -447,13 +478,12 @@ final class World {
         mesh(Prim.circle(.9, 8), mPool, x, .055, z, -PI / 2, 0, 0);
     }
 
-    private double rx, rz;
-    private boolean roadV;
+    private final ArrayList<Double> roadZs = new ArrayList<>(), roadXs = new ArrayList<>();
     private final ArrayList<double[]> zones = new ArrayList<>();
 
     private boolean spaceFree(double x, double z, double w, double d, double m) {
         if (Math.abs(x) - w / 2 < 6.5 && Math.abs(z) - d / 2 < 6.5) return false;
-        if (Math.abs(x) + w / 2 > 42 || Math.abs(z) + d / 2 > 42) return false;
+        if (Math.abs(x) + w / 2 > HALF - 3 || Math.abs(z) + d / 2 > HALF - 3) return false;
         for (double[] o : obs) {
             if (Math.abs(x - o[0]) < (w + o[2]) / 2 + m && Math.abs(z - o[1]) < (d + o[3]) / 2 + m) return false;
         }
@@ -465,18 +495,35 @@ final class World {
 
     private double[] find(double w, double d, double m, int tries) {
         for (int i = 0; i < tries; i++) {
-            double x = rnd(-40, 40), z = rnd(-40, 40);
+            double x = rnd(-HALF + 5, HALF - 5), z = rnd(-HALF + 5, HALF - 5);
             if (spaceFree(x, z, w, d, m)) return new double[]{x, z};
         }
         return null;
     }
 
     private double[] findRoad(double w, double d, double m) {
-        boolean h = !roadV || rng.nextBoolean();
-        double t = rnd(-38, 38);
-        double x = h ? t : rx + rnd(-2.5, 2.5), z = h ? rz + rnd(-2.5, 2.5) : t;
+        boolean h = roadXs.isEmpty() || rng.nextBoolean();
+        double t = rnd(-HALF + 6, HALF - 6);
+        double x, z;
+        if (h) {
+            x = t;
+            z = roadZs.get(rng.nextInt(roadZs.size())) + rnd(-2.5, 2.5);
+        } else {
+            z = t;
+            x = roadXs.get(rng.nextInt(roadXs.size())) + rnd(-2.5, 2.5);
+        }
         if (!spaceFree(x, z, w, d, m)) return null;
         return new double[]{x, z, h ? 0 : 1};
+    }
+
+    private void tower(double x, double z) {
+        box(x, z, 4.4, 4.4, 6, mWood);
+        for (int i = 0; i < 10; i++) box(x + 2.7 + (9 - i), z, 1, 2.2, .55 * (i + 1), mConc);
+        for (int a = -1; a <= 1; a += 2) for (int b = -1; b <= 1; b += 2) box(x + a * 2.1, z + b * 2.1, .3, .3, 9.5, mWood);
+        mb(5, .25, 5, x, 9.6, z, mWood);
+        mesh(Prim.sphere(.22, 5, 4), Mat.basic(0xff3030), x, 9.9, z);
+        light(0xff3030, .9, 16, x, 9.9, z, true);
+        spots.add(new double[]{x, z, 0});
     }
 
     private double[][] gaps(double len, boolean needDoor) {
@@ -563,37 +610,70 @@ final class World {
     }
 
     private void build() {
-        mesh(Prim.plane(400, 400), mGround, 0, 0, 0, -PI / 2, 0, 0);
-        box(0, -46, 96, 2, 6, mBrick);
-        box(0, 46, 96, 2, 6, mBrick);
-        box(-46, 0, 2, 96, 6, mBrick);
-        box(46, 0, 2, 96, 6, mBrick);
-        mirror(0, -44.9, 0);
-        mirror(0, 44.9, PI);
-        mirror(-44.9, 0, PI / 2);
-        mirror(44.9, 0, -PI / 2);
+        double H = HALF;
+        always = true;
+        mesh(Prim.plane(900, 900), mGround, 0, 0, 0, -PI / 2, 0, 0);
+        box(0, -(H + 1), 2 * H + 4, 2, 6, mBrick);
+        box(0, H + 1, 2 * H + 4, 2, 6, mBrick);
+        box(-(H + 1), 0, 2, 2 * H + 4, 6, mBrick);
+        box(H + 1, 0, 2, 2 * H + 4, 6, mBrick);
+        always = false;
+        mirror(0, -(H - .1), 0);
+        mirror(0, H - .1, PI);
+        mirror(-(H - .1), 0, PI / 2);
+        mirror(H - .1, 0, -PI / 2);
 
-        rz = rnd(-14, 14);
-        rx = rnd(-14, 14);
-        roadV = rng.nextInt(4) != 0;
-        mesh(Prim.plane(92, 8), mRd, 0, .03, rz, -PI / 2, 0, 0);
-        if (roadV) mesh(Prim.plane(92, 8), mRd, rx, .03, 0, -PI / 2, 0, PI / 2);
+        double[] zs0 = {rnd(-16, 16), rnd(-95, -50), rnd(50, 95)};
+        double[] xs0 = {rnd(-16, 16), rnd(-95, -50), rnd(50, 95)};
+        always = true;
+        for (double z : zs0) {
+            roadZs.add(z);
+            roads.add(new double[]{0, z, 2 * H, 8});
+            mesh(Prim.plane(2 * H, 8), mRd, 0, .03, z, -PI / 2, 0, 0);
+        }
+        for (int i = 0; i < 3; i++) {
+            if (i > 0 && rng.nextInt(3) == 0) continue;
+            roadXs.add(xs0[i]);
+            roads.add(new double[]{xs0[i], 0, 8, 2 * H});
+            mesh(Prim.plane(2 * H, 8), mRd, xs0[i], .03, 0, -PI / 2, 0, PI / 2);
+        }
+        always = false;
 
-        int nh = 4 + rng.nextInt(4);
-        for (int a = 0, n = 0; a < 300 && n < nh; a++) {
+        double[][] towns = new double[8][2];
+        for (int i = 0; i < 8; i++) towns[i] = new double[]{rnd(-H + 40, H - 40), rnd(-H + 40, H - 40)};
+        int nh = 36 + rng.nextInt(14);
+        for (int a = 0, n = 0; a < 2500 && n < nh; a++) {
             double w = Math.round(rnd(9, 17) * 2) / 2.0, d = Math.round(rnd(8, 13) * 2) / 2.0;
             double h = new double[]{3.6, 4, 5}[rng.nextInt(3)];
-            double x = rnd(-38 + w / 2, 38 - w / 2), z = rnd(-38 + d / 2, 38 - d / 2);
-            if (Math.abs(z - rz) < 5.5 + d / 2) continue;
-            if (roadV && Math.abs(x - rx) < 5.5 + w / 2) continue;
-            if (!spaceFree(x, z, w + 2, d + 2, 3)) continue;
+            double x, z;
+            if (rng.nextInt(4) != 0) {
+                double[] tc = towns[rng.nextInt(8)];
+                x = tc[0] + rnd(-30, 30);
+                z = tc[1] + rnd(-30, 30);
+            } else {
+                x = rnd(-H + 12, H - 12);
+                z = rnd(-H + 12, H - 12);
+            }
+            if (Math.abs(x) > H - 12 || Math.abs(z) > H - 12) continue;
+            boolean onRoad = false;
+            for (double rz0 : roadZs) if (Math.abs(z - rz0) < 5.5 + d / 2) onRoad = true;
+            for (double rx0 : roadXs) if (Math.abs(x - rx0) < 5.5 + w / 2) onRoad = true;
+            if (onRoad || !spaceFree(x, z, w + 2, d + 2, 3)) continue;
             zones.add(new double[]{x, z, w, d});
             randHouse(x, z, w, d, h);
             n++;
         }
 
-        int nc = 8 + rng.nextInt(5);
-        for (int i = 0, n = 0; i < 120 && n < nc; i++) {
+        for (int i = 0, n = 0, want = 6; i < 600 && n < want; i++) {
+            double[] tp = find(20, 8, 2, 1);
+            if (tp == null) continue;
+            tower(tp[0] - 5, tp[1]);
+            zones.add(new double[]{tp[0], tp[1], 20, 8});
+            n++;
+        }
+
+        int nc = 34 + rng.nextInt(12);
+        for (int i = 0, n = 0; i < 800 && n < nc; i++) {
             boolean onRoad = rng.nextInt(10) < 7;
             double[] p = onRoad ? findRoad(4.4, 4.4, 1) : find(4.4, 4.4, 1, 1);
             if (p == null) continue;
@@ -601,17 +681,17 @@ final class World {
             car(p[0], p[1], v);
             n++;
         }
-        int nb = 6 + rng.nextInt(4), fires = 0;
-        for (int i = 0, n = 0; i < 80 && n < nb; i++) {
+        int nb = 26 + rng.nextInt(10), fires = 0;
+        for (int i = 0, n = 0; i < 600 && n < nb; i++) {
             double[] p = find(.9, .9, 1, 1);
             if (p == null) continue;
-            boolean fire = fires < 3 && rng.nextInt(3) == 0;
+            boolean fire = fires < 10 && rng.nextInt(3) == 0;
             if (fire) fires++;
             barrel(p[0], p[1], fire);
             n++;
         }
-        int ncr = 10 + rng.nextInt(7);
-        for (int i = 0, n = 0; i < 120 && n < ncr; i++) {
+        int ncr = 60 + rng.nextInt(20);
+        for (int i = 0, n = 0; i < 900 && n < ncr; i++) {
             double s = rnd(1, 1.8);
             double[] p = find(s, s, 1, 1);
             if (p == null) continue;
@@ -619,17 +699,17 @@ final class World {
             if (rng.nextBoolean() && spaceFree(p[0] + s + .1, p[1], s, s, .2)) box(p[0] + s + .1, p[1], s, s, s, mCrate);
             n++;
         }
-        int nsb = 3 + rng.nextInt(3);
-        for (int i = 0, n = 0; i < 80 && n < nsb; i++) {
+        int nsb = 14 + rng.nextInt(6);
+        for (int i = 0, n = 0; i < 400 && n < nsb; i++) {
             boolean hz = rng.nextBoolean();
             double[] p = find(hz ? 6 : .8, hz ? .8 : 6, 1, 1);
             if (p == null) continue;
             box(p[0], p[1], hz ? 6 : .8, hz ? .8 : 6, .9, mSand);
             n++;
         }
-        int nbar = 5 + rng.nextInt(4);
-        for (int i = 0, n = 0; i < 100 && n < nbar; i++) {
-            double ang = rnd(0, 6.28), r = rnd(12, 32);
+        int nbar = 24 + rng.nextInt(10);
+        for (int i = 0, n = 0; i < 600 && n < nbar; i++) {
+            double ang = rnd(0, 6.28), r = rnd(12, H - 10);
             double x = Math.cos(ang) * r, z = Math.sin(ang) * r;
             boolean hz = rng.nextBoolean();
             if (!spaceFree(x, z, hz ? 2.6 : .9, hz ? .9 : 2.6, 1)) continue;
@@ -639,20 +719,22 @@ final class World {
         int[] perkCol = {0xcc2222, 0xe0b020, 0x2288dd, 0xdd6610};
         String[] perkTxt = {"JUGGER-NOG", "SPEED COLA", "QUICK REVIVE", "DOUBLE TAP"};
         for (int k = 0; k < 4; k++) {
-            double[] p = find(1.2, 1, 2.5, 60);
+            double[] p = find(1.2, 1, 2.5, 200);
             if (p == null) continue;
             perk(p[0], p[1], perkCol[k]);
             String s = perkTxt[k];
             decal(1.1, .55, p[0], 1.7, p[1] + .52, 0, lab(s, "#111111", "#eeeeee", s.length() > 10 ? 11 : 13), true);
+            spots.add(new double[]{p[0], p[1], 1});
         }
-        double[] pp = find(1.8, 1.2, 2.5, 60);
+        double[] pp = find(1.8, 1.2, 2.5, 200);
         if (pp != null) {
             box(pp[0], pp[1], 1.8, 1.2, 2.6, Mat.color(0x4a1a7a).emissive(0x2a0a55, .8));
             mesh(Prim.sphere(.3, 6, 5), Mat.basic(0xc070ff), pp[0], 2.9, pp[1]);
             decal(1.6, .5, pp[0], 1.6, pp[1] + .62, 0, lab("PACK-A-PUNCH", "#2a0a40", "#d9a0ff", 11), true);
             light(0xaa55ff, 1.3, 12, pp[0], 2.5, pp[1] + 1, false);
+            spots.add(new double[]{pp[0], pp[1], 2});
         }
-        double[] mb2 = find(1.7, .9, 2.5, 60);
+        double[] mb2 = find(1.7, .9, 2.5, 200);
         if (mb2 != null) {
             box(mb2[0], mb2[1], 1.7, .9, .8, mCrate);
             Mat beam = Mat.basic(0x66ccff).alpha(.22);
@@ -660,119 +742,121 @@ final class World {
             mesh(Prim.cyl(.7, .7, 8, 8, true), beam, mb2[0], 4.4, mb2[1]);
             mb(1.5, .1, .5, mb2[0], .86, mb2[1], Mat.basic(0xffd24a));
             light(0x55aaff, 1.1, 11, mb2[0], 2.2, mb2[1], false);
+            spots.add(new double[]{mb2[0], mb2[1], 3});
         }
 
-        for (int i = 0, n = 0, want = 12 + rng.nextInt(7); i < 200 && n < want; i++) {
+        for (int i = 0, n = 0, want = 60 + rng.nextInt(20); i < 900 && n < want; i++) {
             double[] p = find(.6, .6, 1, 1);
             if (p == null) continue;
             box(p[0], p[1], .6, .6, 2.5 + rng.nextDouble() * 2, mWood);
             n++;
         }
-        for (int i = 0, n = 0, want = 8 + rng.nextInt(5); i < 200 && n < want; i++) {
+        for (int i = 0, n = 0, want = 90 + rng.nextInt(30); i < 1200 && n < want; i++) {
             double[] p = find(.6, .6, 1.5, 1);
             if (p == null) continue;
             dtree(p[0], p[1], rnd(4, 6.5));
             n++;
         }
-        for (int i = 0, n = 0, want = 4 + rng.nextInt(4); i < 100 && n < want; i++) {
+        for (int i = 0, n = 0, want = 20 + rng.nextInt(10); i < 500 && n < want; i++) {
             double[] p = find(1, 1, 1, 1);
             if (p == null) continue;
             tires(p[0], p[1]);
             n++;
         }
 
-        double[] gv = find(14, 9.5, 1, 40);
-        if (gv != null) {
+        for (int g = 0; g < 3; g++) {
+            double[] gv = find(14, 9.5, 1, 150);
+            if (gv == null) continue;
             for (int r = 0; r < 3; r++) {
                 for (int c = 0; c < 5; c++) box(gv[0] - 5.2 + c * 2.6, gv[1] - 2.8 + r * 2.8, .8, .3, 1 + rng.nextDouble() * .4, mConc);
             }
             box(gv[0] + 5.7, gv[1] + 4.5, .2, .2, 2.4, mWood);
             mb(1.1, .2, .2, gv[0] + 5.7, 2, gv[1] + 4.5, mWood);
+            zones.add(new double[]{gv[0], gv[1], 14, 9.5});
         }
-        double[] bk = find(6.5, 6, 2, 60);
-        if (bk != null) {
+        for (int g = 0; g < 3; g++) {
+            double[] bk = find(6.5, 6, 2, 150);
+            if (bk == null) continue;
             box(bk[0], bk[1] - 2, 5, .8, .9, mSand);
             box(bk[0] - 2.4, bk[1], .8, 4, .9, mSand);
             box(bk[0] + 2.4, bk[1], .8, 4, .9, mSand);
             box(bk[0], bk[1] - .5, 1.2, 1.2, 1.2, mCrate);
+            zones.add(new double[]{bk[0], bk[1], 6.5, 6});
+            spots.add(new double[]{bk[0], bk[1], 4});
         }
-        double[] tw = find(4.4, 4.4, 2, 60);
-        if (tw != null) {
-            double tx = tw[0], tz = tw[1];
-            for (int a = -1; a <= 1; a += 2) for (int b2 = -1; b2 <= 1; b2 += 2) box(tx + a * 1.2, tz + b2 * 1.2, .3, .3, 5, mWood);
-            mb(3.8, .25, 3.8, tx, 5.1, tz, mWood);
-            mb(3.8, .9, .12, tx, 5.7, tz + 1.9, mWood);
-            mb(3.8, .9, .12, tx, 5.7, tz - 1.9, mWood);
-        }
-        double[] tk = find(9.4, 3.2, 2, 60);
-        if (tk != null) {
+        for (int g = 0; g < 4; g++) {
+            double[] tk = find(9.4, 3.2, 2, 150);
+            if (tk == null) continue;
             box(tk[0], tk[1], 9, 2.6, 3, mRust);
             mb(7.6, .7, 2.7, tk[0], 2.1, tk[1], mDark);
             mb(.05, 1.6, 2.2, tk[0] + 4.55, 1.9, tk[1], mDark);
-        }
-        if (rng.nextBoolean()) {
-            boolean hz = rng.nextBoolean();
-            double edge = (rng.nextBoolean() ? -1 : 1) * 40, st = rnd(-28, 8);
-            for (int i = 0; i < 10; i++) {
-                double fx = hz ? st + i * 3 : edge, fz = hz ? edge : st + i * 3;
-                if (spaceFree(fx, fz, .2, .2, .3)) box(fx, fz, hz ? 2.6 : .2, hz ? .2 : 2.6, 1.6, mWood);
-            }
+            zones.add(new double[]{tk[0], tk[1], 9.4, 3.2});
         }
 
-        for (int t : new int[]{-30, -12, 12, 30}) {
-            double side = (t > 0 ? 1 : -1) * 5.5;
-            lamp(t, rz + side);
-            if (roadV) lamp(rx - side, t);
+        for (double z : roadZs) {
+            for (int i = 0; ; i++) {
+                double t = -H + 24 + i * 28;
+                if (t > H - 20) break;
+                lamp(t, z + (i % 2 == 0 ? 5.5 : -5.5));
+            }
         }
-        for (int a : new int[]{-40, -24, -8, 8, 24, 40}) {
+        for (double x : roadXs) {
+            for (int i = 0; ; i++) {
+                double t = -H + 36 + i * 28;
+                if (t > H - 20) break;
+                lamp(x + (i % 2 == 0 ? -5.5 : 5.5), t);
+            }
+        }
+        for (double a = -H + 12; a <= H - 12; a += 24) {
             for (int s = -1; s <= 1; s += 2) {
-                box(a, s * 44.2, 1.6, 1.6, 7, mConc);
-                box(s * 44.2, a, 1.6, 1.6, 7, mConc);
-                mesh(Prim.sphere(.18, 5, 4), mBulb, a, 6.3, s * 43.2);
-                mesh(Prim.sphere(.18, 5, 4), mBulb, s * 43.2, 6.3, a);
+                box(a, s * (H - 1.2), 1.6, 1.6, 7, mConc);
+                box(s * (H - 1.2), a, 1.6, 1.6, 7, mConc);
+                mesh(Prim.sphere(.18, 5, 4), mBulb, a, 6.3, s * (H - 2.2));
+                mesh(Prim.sphere(.18, 5, 4), mBulb, s * (H - 2.2), 6.3, a);
             }
         }
         for (int wl = 0; wl < 4; wl++) {
-            for (int k = 0; k < 2; k++) {
-                double t = (rng.nextBoolean() ? -1 : 1) * rnd(12, 32);
+            for (int k = 0; k < 3; k++) {
+                double t = (rng.nextBoolean() ? -1 : 1) * rnd(12, H - 20);
                 String s = TAGS[rng.nextInt(TAGS.length)];
                 Tex.Painter gp = grf(s, 18);
-                if (wl == 0) decal(6, 1.6, t, 3.4, -44.85, 0, gp, true);
-                else if (wl == 1) decal(6, 1.6, t, 3.4, 44.85, PI, gp, true);
-                else if (wl == 2) decal(6, 1.6, -44.85, 3.4, t, PI / 2, gp, true);
-                else decal(6, 1.6, 44.85, 3.4, t, -PI / 2, gp, true);
+                if (wl == 0) decal(6, 1.6, t, 3.4, -(H - .15), 0, gp, true);
+                else if (wl == 1) decal(6, 1.6, t, 3.4, H - .15, PI, gp, true);
+                else if (wl == 2) decal(6, 1.6, -(H - .15), 3.4, t, PI / 2, gp, true);
+                else decal(6, 1.6, H - .15, 3.4, t, -PI / 2, gp, true);
             }
         }
 
-        for (int i = 0, n = 0, want = 5 + rng.nextInt(5); i < 100 && n < want; i++) {
-            double x = rnd(-40, 40), z = rnd(-40, 40);
+        double R = H - 3;
+        for (int i = 0, n = 0, want = 30 + rng.nextInt(10); i < 400 && n < want; i++) {
+            double x = rnd(-R, R), z = rnd(-R, R);
             if (Math.abs(x) < 3 && Math.abs(z) < 3) continue;
             corpse(x, z, rnd(0, 6.28));
             n++;
         }
-        for (int i = 0, n = 0; i < 200 && n < 16; i++) {
-            double x = rnd(-42, 42), z = rnd(-42, 42);
+        for (int i = 0, n = 0; i < 600 && n < 70; i++) {
+            double x = rnd(-R, R), z = rnd(-R, R);
             if (freeAt(x, z)) {
                 mesh(Prim.circle(rnd(.6, 1.8), 8), mPool, x, .045, z, -PI / 2, 0, 0);
                 n++;
             }
         }
-        for (int i = 0, n = 0; i < 200 && n < 16; i++) {
-            double x = rnd(-42, 42), z = rnd(-42, 42);
+        for (int i = 0, n = 0; i < 600 && n < 70; i++) {
+            double x = rnd(-R, R), z = rnd(-R, R);
             if (freeAt(x, z)) {
                 mesh(Prim.circle(rnd(2, 5), 9), mMud, x, .02, z, -PI / 2, 0, 0);
                 n++;
             }
         }
-        for (int i = 0, n = 0; i < 200 && n < 22; i++) {
-            double x = rnd(-42, 42), z = rnd(-42, 42);
+        for (int i = 0, n = 0; i < 600 && n < 100; i++) {
+            double x = rnd(-R, R), z = rnd(-R, R);
             if (freeAt(x, z)) {
                 mbr(rnd(1, 2.2), .06, .22, x, .08, z, mWood, rnd(-.15, .15), rnd(0, 6.28), rnd(-.15, .15));
                 n++;
             }
         }
-        for (int i = 0, n = 0; i < 200 && n < 30; i++) {
-            double x = rnd(-42, 42), z = rnd(-42, 42);
+        for (int i = 0, n = 0; i < 800 && n < 130; i++) {
+            double x = rnd(-R, R), z = rnd(-R, R);
             if (freeAt(x, z)) {
                 mbr(rnd(.2, .5), rnd(.15, .4), rnd(.2, .5), x, .12, z, mConc, rnd(-.4, .4), rnd(0, 6.28), rnd(-.4, .4));
                 n++;
@@ -793,7 +877,12 @@ final class World {
 
     void draw(boolean blendPass) {
         ArrayList<Batch> list = blendPass ? blend : solid;
+        double lim = Gfx.drawDist + CH * .75;
         for (Batch b : list) {
+            if (!b.always) {
+                double dx = b.cx - Gfx.camX, dz = b.cz - Gfx.camZ;
+                if (dx * dx + dz * dz > lim * lim) continue;
+            }
             Gfx.useMat(b.mat);
             Gfx.draw(b.geo, Xf.ID);
         }

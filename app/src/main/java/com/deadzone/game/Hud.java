@@ -8,6 +8,7 @@ final class Hud {
     volatile String room = "";
     volatile String banner = "";
     volatile double banT;
+    volatile double waveLeft = -1;
     volatile double vig;
     volatile double stickX, stickY;
     volatile double px, pz, pyaw, bh = .7;

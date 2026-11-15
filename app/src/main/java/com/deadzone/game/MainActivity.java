@@ -40,6 +40,32 @@ public class MainActivity extends Activity implements Game.Ui {
     private LinearLayout wList;
     private WorldStore.Info selWorld;
     private EditText nameIn;
+    private View srDynRow;
+    private final android.os.Handler thermalH = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable thermalTick = new Runnable() {
+        @Override
+        public void run() {
+            float cap = 1f;
+            try {
+                if (Build.VERSION.SDK_INT >= 29) {
+                    android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+                    int ts = pm.getCurrentThermalStatus();
+                    if (ts >= 4) cap = .5f;
+                    else if (ts >= 3) cap = .6f;
+                    else if (ts >= 2) cap = .75f;
+                    else if (ts >= 1) cap = .9f;
+                }
+                Intent bi = registerReceiver(null, new android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+                int t = bi != null ? bi.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, 0) : 0;
+                if (t >= 450) cap = Math.min(cap, .55f);
+                else if (t >= 420) cap = Math.min(cap, .7f);
+                else if (t >= 400) cap = Math.min(cap, .85f);
+            } catch (Exception ignored) {
+            }
+            Upscaler.thermalCap = cap;
+            thermalH.postDelayed(this, 4000);
+        }
+    };
     private WorldStore store;
     private boolean worldsHost;
     private TextView status, overText;
@@ -48,6 +74,8 @@ public class MainActivity extends Activity implements Game.Ui {
     private float d;
     private FrameLayout root;
     private SoundPool pool;
+    private MediaPlayer bhP;
+    private boolean bhResume;
     private final java.util.HashMap<String, Integer> soundIds = new java.util.HashMap<>();
 
     private int dp(float v) {
@@ -110,14 +138,12 @@ public class MainActivity extends Activity implements Game.Ui {
         setContentView(root);
     }
 
-    /** short effects (multiplayer, black hole) loaded once */
     private void initSounds() {
         try {
             pool = new SoundPool.Builder().setMaxStreams(10).setAudioAttributes(new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_GAME)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()).build();
-            String[] names = {"mp_join", "mp_far_1", "mp_far_2", "mp_far_3", "mp_near_1", "mp_near_2", "mp_near_3",
-                    "bh_grow_small", "bh_grow_big"};
+            String[] names = {"mp_join", "mp_far_1", "mp_far_2", "mp_far_3", "mp_near_1", "mp_near_2", "mp_near_3"};
             for (String n : names) {
                 int res = getResources().getIdentifier(n, "raw", getPackageName());
                 if (res != 0) soundIds.put(n, pool.load(this, res, 1));
@@ -128,6 +154,36 @@ public class MainActivity extends Activity implements Game.Ui {
     }
 
     @Override
+    public void bhSound(final int cmd, final int posMs) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (cmd == 0 || cmd == 1) {
+                        if (bhP != null) {
+                            bhP.release();
+                            bhP = null;
+                        }
+                        bhResume = false;
+                    }
+                    if (cmd == 1) {
+                        bhP = MediaPlayer.create(MainActivity.this, R.raw.bh_grow_60);
+                        if (bhP == null) return;
+                        bhP.setVolume(.9f, .9f);
+                        if (posMs > 0) bhP.seekTo(posMs);
+                        bhP.start();
+                    } else if (cmd == 2) {
+                        if (bhP != null && bhP.isPlaying()) bhP.pause();
+                    } else if (cmd == 3) {
+                        if (bhP != null && !bhP.isPlaying()) bhP.start();
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    @Override
     public void sound(String name, float vol) {
         SoundPool p = pool;
         Integer id = soundIds.get(name);
@@ -135,7 +191,6 @@ public class MainActivity extends Activity implements Game.Ui {
         p.play(id, vol, vol, 1, 0, 1f);
     }
 
-    /** rebuild every screen in place (language change) without restarting the game */
     private void rebuildUi() {
         int resumeVis = resume.getVisibility();
         CharSequence st = status.getText();
@@ -197,6 +252,7 @@ public class MainActivity extends Activity implements Game.Ui {
         }
         WindowManager.LayoutParams lp = getWindow().getAttributes();
         lp.preferredRefreshRate = best;
+        Upscaler.targetFps = best;
         getWindow().setAttributes(lp);
         gl.queueEvent(new Runnable() {
             @Override
@@ -608,9 +664,19 @@ public class MainActivity extends Activity implements Game.Ui {
             public void onCheckedChanged(CompoundButton b, boolean on) {
                 set.nativeRes = on;
                 set.save();
+                srDynRow.setVisibility(on ? View.VISIBLE : View.GONE);
                 applyGraphics();
             }
         }), rowLp);
+        srDynRow = toggle(L.t("s_srdyn"), set.srDynamic, new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                set.srDynamic = on;
+                set.save();
+            }
+        });
+        srDynRow.setVisibility(set.nativeRes ? View.VISIBLE : View.GONE);
+        col.addView(srDynRow, rowLp);
         col.addView(toggle(L.t("s_mb"), set.motionBlur, new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton b, boolean on) {
@@ -979,14 +1045,27 @@ public class MainActivity extends Activity implements Game.Ui {
     @Override
     protected void onPause() {
         super.onPause();
+        thermalH.removeCallbacks(thermalTick);
         stopRain();
+        try {
+            bhResume = bhP != null && bhP.isPlaying();
+            if (bhResume) bhP.pause();
+        } catch (Exception ignored) {
+        }
         gl.onPause();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        try {
+            if (bhResume && bhP != null) bhP.start();
+        } catch (Exception ignored) {
+        }
+        bhResume = false;
         gl.onResume();
+        thermalH.removeCallbacks(thermalTick);
+        thermalH.post(thermalTick);
         if (GameFiles.hasAccess(this)) GameFiles.migrateFallback(this);
         else ensureStorage();
     }
@@ -995,6 +1074,7 @@ public class MainActivity extends Activity implements Game.Ui {
     protected void onDestroy() {
         stopRain();
         if (pool != null) pool.release();
+        if (bhP != null) bhP.release();
         game.release();
         super.onDestroy();
     }

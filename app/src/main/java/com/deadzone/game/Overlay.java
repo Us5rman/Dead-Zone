@@ -1,10 +1,12 @@
 package com.deadzone.game;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RadialGradient;
+import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.view.MotionEvent;
@@ -138,6 +140,11 @@ final class Overlay extends View {
         p.setTextSize(15 * d);
         c.drawText(L.t("h_wave") + " " + hud.wave, 16 * d, 44 * d, p);
         c.drawText(L.t("h_kills") + " " + hud.kills, 16 * d, 62 * d, p);
+        if (hud.waveLeft >= 0) {
+            int sec = (int) Math.ceil(hud.waveLeft);
+            p.setColor(sec <= 10 ? 0xCCff6a4a : 0xAAcccccc);
+            c.drawText(L.t("h_void") + " " + (sec / 60) + ":" + (sec % 60 < 10 ? "0" : "") + (sec % 60), 130 * d, 44 * d, p);
+        }
 
         p.setTextAlign(Paint.Align.RIGHT);
         p.setTextSize(22 * d);
@@ -170,7 +177,8 @@ final class Overlay extends View {
             c.drawText(sb.toString(), w / 2f, 46 * d, p);
         }
 
-        drawMap(c, w);
+        if (bigMap) drawBig(c, w, h);
+        else drawMap(c, w);
 
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeWidth(Math.max(1f, d));
@@ -198,6 +206,79 @@ final class Overlay extends View {
         controls(c);
     }
 
+    private boolean bigMap;
+    private Bitmap mapBmp;
+    private long mapSeed = Long.MIN_VALUE;
+
+    private void buildMapBmp() {
+        World wd = game.world;
+        if (mapBmp != null && mapSeed == wd.seed) return;
+        int sz = 900;
+        float k = sz / (2f * World.HALF), hh = World.HALF;
+        Bitmap bm = Bitmap.createBitmap(sz, sz, Bitmap.Config.ARGB_8888);
+        Canvas bc = new Canvas(bm);
+        bc.drawColor(0xFF10160f);
+        Paint q = new Paint();
+        q.setColor(0xFF2b2b2b);
+        for (double[] r : wd.roads) {
+            bc.drawRect((float) (r[0] - r[2] / 2 + hh) * k, (float) (r[1] - r[3] / 2 + hh) * k,
+                    (float) (r[0] + r[2] / 2 + hh) * k, (float) (r[1] + r[3] / 2 + hh) * k, q);
+        }
+        q.setColor(0xFF59606a);
+        for (double[] ob : wd.obs) {
+            bc.drawRect((float) (ob[0] - ob[2] / 2 + hh) * k, (float) (ob[1] - ob[3] / 2 + hh) * k,
+                    (float) (ob[0] + ob[2] / 2 + hh) * k, (float) (ob[1] + ob[3] / 2 + hh) * k, q);
+        }
+        mapBmp = bm;
+        mapSeed = wd.seed;
+    }
+
+    private void drawBig(Canvas c, int w, int h) {
+        buildMapBmp();
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0xF2000000);
+        c.drawRect(0, 0, w, h, p);
+        float m = Math.min(w, h) * .92f, left = (w - m) / 2f, top = (h - m) / 2f, s = m / (2f * World.HALF);
+        c.drawBitmap(mapBmp, null, new RectF(left, top, left + m, top + m), p);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(Math.max(1f, d));
+        p.setColor(0xFF6a7078);
+        c.drawRect(left, top, left + m, top + m, p);
+        p.setStyle(Paint.Style.FILL);
+        String[] names = {"TOWER", "PERK", "PAP", "BOX", "BUNKER"};
+        int[] cols = {0xFFffaa33, 0xFFdd3333, 0xFFaa55ff, 0xFF55aaff, 0xFF88cc66};
+        p.setTextSize(9 * d);
+        p.setTextAlign(Paint.Align.CENTER);
+        for (double[] sp : game.world.spots) {
+            int t = (int) sp[2];
+            float x = left + (float) (sp[0] + World.HALF) * s, y = top + (float) (sp[1] + World.HALF) * s;
+            p.setColor(cols[t]);
+            c.drawCircle(x, y, 3.5f * d, p);
+            c.drawText(names[t], x, y - 6 * d, p);
+        }
+        int[] zc = {0xFFdd3322, 0xFFff8822, 0xFFdd33aa, 0xFF9955ff, 0xFFffdd33};
+        float[] zz = hud.mz;
+        for (int i = 0; i + 2 < zz.length; i += 3) {
+            p.setColor(zc[Math.max(0, Math.min(4, (int) zz[i + 2]))]);
+            c.drawCircle(left + (zz[i] + World.HALF) * s, top + (zz[i + 1] + World.HALF) * s, 2f * d, p);
+        }
+        p.setColor(0xFF33ddff);
+        float[] pp = hud.mp;
+        for (int i = 0; i + 1 < pp.length; i += 2) c.drawCircle(left + (pp[i] + World.HALF) * s, top + (pp[i + 1] + World.HALF) * s, 3f * d, p);
+        c.save();
+        c.translate(left + (float) (hud.px + World.HALF) * s, top + (float) (hud.pz + World.HALF) * s);
+        c.rotate(-(float) Math.toDegrees(hud.pyaw));
+        mmArrow.reset();
+        mmArrow.moveTo(0, -7 * d);
+        mmArrow.lineTo(-5 * d, 5 * d);
+        mmArrow.lineTo(5 * d, 5 * d);
+        mmArrow.close();
+        p.setColor(0xFFffffff);
+        c.drawPath(mmArrow, p);
+        c.restore();
+        p.setTextAlign(Paint.Align.LEFT);
+    }
+
     private void drawMap(Canvas c, int w) {
         float r = 50 * d, mx = 16 * d + r, my = 72 * d + r, s = r / 30f;
         double yaw = hud.pyaw, cs = Math.cos(yaw), sn = Math.sin(yaw);
@@ -212,7 +293,9 @@ final class Overlay extends View {
         c.rotate((float) Math.toDegrees(yaw));
         c.translate(-(float) hud.px * s, -(float) hud.pz * s);
         p.setColor(0xFF3a4048);
+        double px0 = hud.px, pz0 = hud.pz;
         for (double[] ob : game.world.obs) {
+            if (Math.abs(ob[0] - px0) > 45 || Math.abs(ob[1] - pz0) > 45) continue;
             float x = (float) (ob[0] * s), z = (float) (ob[1] * s);
             float hw = (float) (ob[2] * s / 2), hd = (float) (ob[3] * s / 2);
             c.drawRect(x - hw, z - hd, x + hw, z + hd, p);
@@ -220,7 +303,7 @@ final class Overlay extends View {
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeWidth(Math.max(1f, d));
         p.setColor(0xFF6a7078);
-        c.drawRect(-45 * s, -45 * s, 45 * s, 45 * s, p);
+        c.drawRect(-World.HALF * s, -World.HALF * s, World.HALF * s, World.HALF * s, p);
         p.setStyle(Paint.Style.FILL);
         int[] zc = {0xFFdd3322, 0xFFff8822, 0xFFdd33aa, 0xFF9955ff, 0xFFffdd33};
         float[] zz = hud.mz;
@@ -363,6 +446,21 @@ final class Overlay extends View {
         if (!hud.playing) {
             releaseAll();
             return true;
+        }
+        if (bigMap) {
+            if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                bigMap = false;
+                invalidate();
+            }
+            return true;
+        }
+        if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            float mr = 50 * d, mcx = 16 * d + mr, mcy = 72 * d + mr;
+            if (dist(e.getX(), e.getY(), mcx, mcy) <= mr) {
+                bigMap = true;
+                invalidate();
+                return true;
+            }
         }
         int a = e.getActionMasked(), ai = e.getActionIndex();
         switch (a) {

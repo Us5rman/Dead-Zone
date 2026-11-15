@@ -159,9 +159,6 @@ final class Sky {
             }
             """;
 
-    /* drops fall as tapered streaks. SHELTER is defined when the GPU can read textures in the vertex stage:
-       the height map then stops every drop on the first block / wall / roof it meets, and the drop
-       runs off along the surface (downhill, or in a random direction on flat tops) before it fades */
     private static final String RAIN_VERT = """
             uniform mat4 uVP;
             uniform vec3 uCam;
@@ -179,7 +176,7 @@ final class Sky {
 
             float hAt(vec2 p) {
             #ifdef SHELTER
-              vec2 uv = (p + 50.0) / 100.0;
+              vec2 uv = (p + 150.0) / 300.0;
               if (uv.x <= 0.0 || uv.y <= 0.0 || uv.x >= 1.0 || uv.y >= 1.0) return 0.0;
               return texture2D(uSh, uv).r * 16.06;
             #else
@@ -206,7 +203,6 @@ final class Sky {
               float hot = 0.0;
               bool dead = keep > uRain || head.y < 0.0;
               if (!dead && hh > 0.25 && head.y < hh) {
-                // the drop is now inside a block: it hit the top surface ta seconds ago
                 float ta = (hh - head.y) / -vel.y;
                 vec2 I = head.xz - vel.xz * ta;
                 if (ta < 0.32 && abs(hAt(I) - hh) < 0.06) {
@@ -236,7 +232,6 @@ final class Sky {
                 float sl = length(side);
                 side = sl > 0.0001 ? side / sl : vec3(1.0, 0.0, 0.0);
                 pos = mix(head - axis * len, head, aCorner.y) + side * aCorner.x * w * mix(0.35, 1.0, aCorner.y);
-                // drops that are about to land get a slightly brighter head
                 hot = (1.0 - smoothstep(0.0, 1.5, head.y - hh)) * 0.5;
               }
               vC = aCorner;
@@ -373,6 +368,10 @@ final class Sky {
         GLES20.glGetShaderiv(s, GLES20.GL_COMPILE_STATUS, ok, 0);
         if (ok[0] == 0) throw new RuntimeException("sky shader: " + GLES20.glGetShaderInfoLog(s));
         return s;
+    }
+
+    static int noiseTexId() {
+        return noiseTex;
     }
 
     static int link(String vs, String fs, String[] attribs) {
@@ -566,13 +565,11 @@ final class Sky {
         Gfx.use();
     }
 
-    /** the world's block / roof heights, so rain stops and runs off them */
     static void setShelter(byte[] data) {
         shData = data;
         shDirty = true;
     }
 
-    /** puddle spots from the world (x, z, radius, seed each) */
     static void setPuddles(float[] spots) {
         pudData = spots == null ? new float[0] : spots;
         pudDirty = true;
@@ -627,7 +624,6 @@ final class Sky {
         GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, v.length * 4, fb, GLES20.GL_STATIC_DRAW);
     }
 
-    /** reflective rain puddles on open ground; they grow as the ground gets wet and shrink as it dries */
     static void drawPuddles(float[] vp, float[] cam) {
         if (pudDirty) uploadPuddles();
         float grow = Math.max(0f, Math.min(1f, (Gfx.wet - .3f) / .55f));

@@ -4,7 +4,7 @@ import android.opengl.GLES20;
 
 final class Gfx {
     static int gen = 0;
-    static float time, flash, bh = .7f, rain, wet = .3f;
+    static float time, flash, bh = .7f, rain, wet = .3f, camX, camZ, drawDist = 100f;
     static boolean reflOn, reflPass;
     static final float[] FOG = {.038f, .055f, .082f};
     static final float FOG_DEN = .055f;
@@ -252,6 +252,8 @@ final class Gfx {
         GLES20.glUniform3f(uCam, cam[0], cam[1], cam[2]);
         GLES20.glUniform3f(uAmb, amb[0], amb[1], amb[2]);
         time = (float) ((System.nanoTime() - T0) / 1e9);
+        camX = cam[0];
+        camZ = cam[2];
         FOG[0] = .038f + .014f * bh;
         FOG[1] = .055f + .005f * bh;
         FOG[2] = .082f;

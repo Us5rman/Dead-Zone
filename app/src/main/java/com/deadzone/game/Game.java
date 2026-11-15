@@ -37,6 +37,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         void rain(float level);
 
         void sound(String name, float vol);
+
+        void bhSound(int cmd, int posMs);
     }
 
     static final int SOLO = 0, HOST = 1, CLIENT = 2;
@@ -133,13 +135,16 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     double jy, vy, hvx, hvz, dvx, dvz, slideT, slideV0, crouchOff, dvPitch, camRoll, crawlPh, fovCur = 70;
     double wDive, wSlide, wCrawl, wRun;
     boolean grounded = true, diving, sprint, crawling, airFast;
-    // hood-slide: a dive at a low obstacle carries you over the top of it
     double vaultT, vaultTop;
     double[] vaultObs;
     private int frames;
     private long fpsT;
 
     // weapon and timers
+    static final int VOID_WAVE = 3;
+    static final double WAVE_TIME = 60, AWAKE_TIME = 7;
+    double waveClock, awakeT = -1;
+    int bhSnd, spawnTotal;
     double spT, waveT, cd, rl, flash, bob, hurtT, RT = 1.75, dryT, netT;
     int rlEv, spawnLeft;
     boolean rlEmpty;
@@ -151,6 +156,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     private static final float[] NOREF = {0f, 0f, 0f};
     private static final float[] FAR = {60f, 100f, 150f, 220f};
     private int frameN;
+    private final World.Light[] pickL = new World.Light[7];
+    private final double[] pickD = new double[7];
     private final float[] prevVp = new float[16];
     private boolean prevVpSet;
     private double weatherT, rainSent = -1, rainClock;
@@ -215,6 +222,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         Sky.init();
         Bolt.init();
         Post.init();
+        Upscaler.init();
         applyGl();
         last = 0;
     }
@@ -227,6 +235,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         Gfx.setRes(vw, vh);
         Sky.resize(vw, vh);
         Post.resize(vw, vh);
+        Upscaler.resize(vw, vh);
     }
 
     @Override
@@ -234,10 +243,24 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         long now = System.nanoTime();
         double dt = last == 0 ? .016 : Math.min((now - last) / 1e9, .05);
         last = now;
-        bhCur += (bhSize(wave) - bhCur) * Math.min(1, dt * .5);
+        if (wave < VOID_WAVE) bhCur += (bhSize(wave) - bhCur) * Math.min(1, dt * .5);
         weather(dt);
-        if (state == PLAY && !(paused && role == SOLO)) update(dt);
+        boolean running = state == PLAY && !(paused && role == SOLO);
+        if (set.nativeRes) Upscaler.tick(dt, set.srDynamic);
+        if (running) update(dt);
         else tickLights(dt);
+        if (bhSnd != 0) {
+            if (state != PLAY) {
+                ui.bhSound(0, 0);
+                bhSnd = 0;
+            } else if (running && bhSnd == 2) {
+                ui.bhSound(3, 0);
+                bhSnd = 1;
+            } else if (!running && bhSnd == 1) {
+                ui.bhSound(2, 0);
+                bhSnd = 2;
+            }
+        }
         render();
         ui.redraw();
         frames++;
@@ -256,8 +279,16 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         }
     }
 
+    private double awakePulse() {
+        if (awakeT < 0) return 0;
+        double s = Math.sin(Math.PI * Math.min(1, awakeT / AWAKE_TIME));
+        return s * s;
+    }
+
     private float[] camWorld() {
-        return Xf.makeYXZR(cx, cy, cz, pitch + kc + dvPitch, yaw + ky, camRoll);
+        double sh = awakePulse();
+        return Xf.makeYXZR(cx, cy, cz, pitch + kc + dvPitch + Math.sin(awakeT * 41) * .008 * sh, yaw + ky,
+                camRoll + Math.sin(awakeT * 29 + 1) * .012 * sh);
     }
 
     private void render() {
@@ -266,12 +297,40 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         Matrix.invertM(viewM, 0, cw, 0);
         float[] proj = new float[16];
         Matrix.perspectiveM(proj, 0, (float) fovCur, (float) vw / vh, .1f, FAR[Math.max(0, Math.min(3, set.renderDist))] + 20f);
-        float[] vp = Xf.mul(proj, viewM);
+        float[] vpU = Xf.mul(proj, viewM);
+        boolean sr = set.nativeRes && Upscaler.ok;
+        int sw = vw, sh = vh;
+        float[] vp = vpU;
+        if (sr) {
+            sw = Math.max(64, Math.round(vw * Upscaler.scale));
+            sh = Math.max(36, Math.round(vh * Upscaler.scale));
+            float[] jt = Upscaler.jitter(sw, sh);
+            float[] jm = Xf.ident();
+            jm[12] = jt[0];
+            jm[13] = jt[1];
+            vp = Xf.mul(jm, vpU);
+        }
+        Gfx.setRes(sw, sh);
 
         float[] plPos = new float[24], plCol = new float[24], plRange = new float[8];
         int n = 0;
+        int cnt = 0;
         for (World.Light l : world.lights) {
-            if (n >= 7) break;
+            double dx = l.x - cx, dz = l.z - cz, dd = dx * dx + dz * dz;
+            int k = cnt;
+            if (cnt < 7) cnt++;
+            else if (dd >= pickD[6]) continue;
+            else k = 6;
+            while (k > 0 && pickD[k - 1] > dd) {
+                pickD[k] = pickD[k - 1];
+                pickL[k] = pickL[k - 1];
+                k--;
+            }
+            pickD[k] = dd;
+            pickL[k] = l;
+        }
+        for (int i = 0; i < cnt; i++) {
+            World.Light l = pickL[i];
             plPos[n * 3] = (float) l.x;
             plPos[n * 3 + 1] = (float) l.y;
             plPos[n * 3 + 2] = (float) l.z;
@@ -298,12 +357,13 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         float[] fwd = Xf.dir(cw, 0, 0, -1);
 
         float[] camPos = {(float) cx, (float) cy, (float) cz};
-        Gfx.flash = (float) Math.max(0, Math.min(1, (ambI - .9) / 1.5));
-        Gfx.bh = (float) bhCur;
+        Gfx.flash = (float) Math.max(awakePulse() * .22, Math.max(0, Math.min(1, (ambI - .9) / 1.5)));
+        Gfx.bh = (float) (bhCur * (1 + .6 * awakePulse()));
         Gfx.frame(vp, camPos, amb, plPos, plCol, plRange, n);
 
         frameN++;
         float farD = FAR[Math.max(0, Math.min(3, set.renderDist))];
+        Gfx.drawDist = 70f;
         boolean refl = Sky.reflOk && pitch + kc + dvPitch < .8;
         Gfx.reflOn = refl;
         if (refl && (frameN & 1) == 0) {
@@ -319,7 +379,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             Bolt.draw(vpR, (float) boltI);
             Gfx.setRefl(false, 0, 1, 0, 0, 0);
             Gfx.setVP(vp);
-            Sky.endReflect(0, vw, vh);
+            Sky.endReflect(0, sw, sh);
         }
 
         float[] mir = Sky.reflOk ? pickMirror(camPos, fwd) : null;
@@ -342,11 +402,13 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             Bolt.draw(vpM, (float) boltI);
             Gfx.setRefl(false, 0, 1, 0, 0, 0);
             Gfx.setVP(vp);
-            Sky.endReflect(1, vw, vh);
+            Sky.endReflect(1, sw, sh);
         }
 
-        boolean mb = set.motionBlur && Post.ok;
-        if (mb) Post.begin();
+        Gfx.drawDist = farD;
+        boolean mb = !sr && set.motionBlur && Post.ok;
+        if (sr) Upscaler.beginScene(sw, sh);
+        else if (mb) Post.begin();
         float[] bg = Mat.rgb(bgHex);
         GLES20.glDepthMask(true);
         GLES20.glClearColor(bg[0], bg[1], bg[2], 1f);
@@ -354,7 +416,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
         world.draw(false);
         drawEntities(camPos, farD + 5);
-        if (!mb) gun.gun.draw(cw, false);
+        if (!mb && !sr) gun.gun.draw(cw, false);
 
         if (skyWorld != world) {
             skyWorld = world;
@@ -368,6 +430,15 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         drawEntitiesBlend();
         drawTrails(camPos);
         Sky.drawRain(vp, camPos);
+        if (sr) {
+            if (!prevVpSet) {
+                System.arraycopy(vpU, 0, prevVp, 0, 16);
+                prevVpSet = true;
+            }
+            Upscaler.finish(vpU, prevVp, camPos, sw, sh, set.motionBlur);
+            Gfx.setVP(vpU);
+            gun.gun.draw(cw, false);
+        }
         if (mb) {
             if (!prevVpSet) {
                 System.arraycopy(vp, 0, prevVp, 0, 16);
@@ -377,7 +448,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             gun.gun.draw(cw, false);
         }
         gun.gun.draw(cw, true);
-        System.arraycopy(vp, 0, prevVp, 0, 16);
+        System.arraycopy(vpU, 0, prevVp, 0, 16);
         prevVpSet = true;
     }
 
@@ -693,6 +764,10 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         pDead = false;
         spawnLeft = 0;
         waveT = 0;
+        waveClock = 0;
+        awakeT = -1;
+        ui.bhSound(0, 0);
+        bhSnd = 0;
         hud.dead = false;
         resetPhysics();
         state = PLAY;
@@ -740,14 +815,18 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         wave = w;
         saveProgress();
         ban(L.t("h_wave") + " " + wave);
-        if (w > 1 && b > a + .001) {
-            boolean tier = (a < 1.2 && b >= 1.2) || (a < 1.9 && b >= 1.9) || (a < 2.6 && b >= 2.6) || (a < 3.5 && b >= 3.5);
-            ui.sound(tier ? "bh_grow_big" : "bh_grow_small", tier ? 1f : .7f);
+        waveClock = 0;
+        if (w >= VOID_WAVE) {
+            if (Math.abs(bhCur - a) > .3) bhCur = a;
+            if (w == VOID_WAVE) awakeT = 0;
+            ui.bhSound(1, 0);
+            bhSnd = 1;
         }
         if (a < 1.2 && b >= 1.2) ban("THE VOID GROWS  -  RUNNERS");
         else if (a < 1.9 && b >= 1.9) ban("THE VOID GROWS  -  BRUTES");
         else if (a < 2.6 && b >= 2.6) ban("THE VOID GROWS  -  VOIDLINGS");
         else if (a < 3.5 && b >= 3.5) ban("THE VOID GROWS  -  TITANS");
+        if (w == VOID_WAVE) ban("THE VOID AWAKENS");
         if (wave > 1) {
             if (pDead) {
                 pDead = false;
@@ -765,6 +844,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
     private void nextWave() {
         spawnLeft = (int) Math.round((4 + (wave + 1) * 3) * (1 + .7 * nOther()));
+        spawnTotal = spawnLeft;
         onWave(wave + 1);
         bc(Net.obj("t", "wave", "w", wave));
     }
@@ -958,7 +1038,6 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         }
     }
 
-    /** other players' gunfire: close shots use the full recording, far ones the thin distant one */
     private void shotSound(Remote q) {
         if (q == null) return;
         double d = Math.hypot(q.x - cx, q.z - cz);
@@ -1098,8 +1177,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         List<Tgt> l = allPl();
         Tgt bp = l.isEmpty() ? new Tgt("", 0, 0) : l.get(rng.nextInt(l.size()));
         double a = rng.nextDouble() * 6.28, d = 26 + rng.nextDouble() * 10;
-        z.x = Math.max(-43, Math.min(43, bp.x + Math.cos(a) * d));
-        z.z = Math.max(-43, Math.min(43, bp.z + Math.sin(a) * d));
+        z.x = Math.max(-World.HALF + 3, Math.min(World.HALF - 3, bp.x + Math.cos(a) * d));
+        z.z = Math.max(-World.HALF + 3, Math.min(World.HALF - 3, bp.z + Math.sin(a) * d));
         for (int k = 0; k < 30 && (!world.freeAt(z.x, z.z) || tooClose(l, z)); k++) {
             z.x = (rng.nextDouble() - .5) * 86;
             z.z = (rng.nextDouble() - .5) * 86;
@@ -1261,8 +1340,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         }
         cx += hvx * dt;
         cz += hvz * dt;
-        cx = Math.max(-44, Math.min(44, cx));
-        cz = Math.max(-44, Math.min(44, cz));
+        cx = Math.max(-World.HALF + 1, Math.min(World.HALF - 1, cx));
+        cz = Math.max(-World.HALF + 1, Math.min(World.HALF - 1, cz));
         double[] pp = {cx, cz};
         collide(pp, .5, jy);
         cx = pp[0];
@@ -1420,6 +1499,15 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
         updateDebris(dt);
 
+        if (awakeT >= 0) {
+            awakeT += dt;
+            if (awakeT > AWAKE_TIME) awakeT = -1;
+        }
+        if (wave >= VOID_WAVE) {
+            waveClock += dt;
+            double a = bhSize(wave - 1);
+            bhCur = a + (bhSize(wave) - a) * Math.min(1, waveClock / WAVE_TIME);
+        }
         boolean isHost = role != CLIENT;
         if (isHost) {
             if (spawnLeft > 0) {
@@ -1427,15 +1515,16 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 if (spT <= 0 && alive() < 12 + 6 * nOther()) {
                     spawn();
                     spawnLeft--;
-                    spT = 1.4 / (1 + .4 * nOther());
+                    spT = (wave >= VOID_WAVE ? Math.max(1.0, Math.min(3.0, 46.0 / Math.max(1, spawnTotal))) : 1.4) / (1 + .4 * nOther());
                 }
-            } else if (alive() == 0) {
+            } else if (wave < VOID_WAVE && alive() == 0) {
                 waveT += dt;
                 if (waveT > 3) {
                     waveT = 0;
                     nextWave();
                 }
             }
+            if (wave >= VOID_WAVE && waveClock >= WAVE_TIME) nextWave();
         }
 
         updateZombies(dt, isHost);
@@ -1460,6 +1549,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         hud.vig = hurtT > 0 ? 1 : Math.max(0, (40 - hp) / 60);
         hud.hp = hp;
         hud.wave = wave;
+        hud.waveLeft = wave >= VOID_WAVE ? Math.max(0, WAVE_TIME - waveClock) : -1;
         hud.kills = kills;
         hud.mag = mag;
         hud.res = res;
@@ -1725,7 +1815,6 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         return g;
     }
 
-    /** crawl without diving: tap to drop down, tap again (or jump) to stand */
     private void toggleCrawl() {
         if (pDead || diving || slideT > 0 || vaultT > 0 || !grounded) return;
         crawling = !crawling;
@@ -1737,10 +1826,6 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         }
     }
 
-    /**
-     * dive straight at a low obstacle you are close to and looking at: instead of
-     * crashing into it you go over the top, hood-slide style, and drop off the far side
-     */
     private boolean tryVault() {
         double lx = -Math.sin(yaw), lz = -Math.cos(yaw);
         if (dvx * lx + dvz * lz < .75 || pitch > .75) return false;
@@ -2000,6 +2085,12 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 startGame(true);
                 wave = m.optInt("wave");
                 kills = m.optInt("kills");
+                waveClock = m.optDouble("wt", 0);
+                if (wave >= VOID_WAVE) {
+                    bhCur = bhSize(wave - 1);
+                    ui.bhSound(1, (int) (Math.min(waveClock, WAVE_TIME) * 1000));
+                    bhSnd = 1;
+                }
                 break;
             case "snap":
                 if (role == CLIENT && state == PLAY) applySnap(m);
@@ -2106,7 +2197,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 q.id = id;
                 q.idx = idx;
                 pl.put(id, q);
-                sendTo(id, Net.obj("t", "welcome", "idx", idx, "wave", wave, "kills", kills, "seed", worldSeed));
+                sendTo(id, Net.obj("t", "welcome", "idx", idx, "wave", wave, "kills", kills, "seed", worldSeed, "wt", waveClock));
                 updRoom();
             }
         });
