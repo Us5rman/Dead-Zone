@@ -1,13 +1,14 @@
 package com.deadzone.game;
 
 import android.app.Activity;
-import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Intent;
 import android.net.Uri;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
@@ -19,6 +20,7 @@ import android.text.InputFilter;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.View;
+import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
@@ -319,20 +321,78 @@ public class MainActivity extends Activity implements Game.Ui {
         e.setTextSize(16);
         e.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
         e.setSingleLine(true);
+        e.setHighlightColor(0x66cc2222);
+        GradientDrawable fb = new GradientDrawable();
+        fb.setColor(0xFF120808);
+        fb.setStroke(dp(2), 0xFF5A0F10);
+        e.setBackground(fb);
+        e.setPadding(dp(12), dp(8), dp(12), dp(8));
         return e;
     }
 
+    private void themedDialog(String title, String message, View content, String okText, final Runnable ok, String cancelText) {
+        final Dialog dlg = new Dialog(this);
+        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(14), dp(20), dp(14));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFF0b0b0b);
+        bg.setStroke(dp(2), 0xFFB22A2A);
+        box.setBackground(bg);
+        box.addView(text(title, 20, 0xFFcc2222, true));
+        if (message != null) {
+            LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1, -2);
+            mp.topMargin = dp(8);
+            box.addView(text(message, 13, 0xFFcccccc, false), mp);
+        }
+        if (content != null) {
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1, -2);
+            cp.topMargin = dp(10);
+            box.addView(content, cp);
+        }
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.END);
+        Button no = button(cancelText, 14);
+        style(no, 0xFF1a1a1a, 0xFF555555);
+        no.setOnClickListener(v -> dlg.dismiss());
+        Button yes = button(okText, 14);
+        yes.setOnClickListener(v -> {
+            dlg.dismiss();
+            ok.run();
+        });
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-2, -2);
+        bp.leftMargin = dp(10);
+        row.addView(no);
+        row.addView(yes, bp);
+        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, -2);
+        rp.topMargin = dp(14);
+        box.addView(row, rp);
+        ScrollView sv = new ScrollView(this);
+        sv.addView(box);
+        dlg.setContentView(sv);
+        Window w = dlg.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            w.setDimAmount(.8f);
+            int sw = getResources().getDisplayMetrics().widthPixels;
+            w.setLayout(Math.min(dp(440), sw * 8 / 10), WindowManager.LayoutParams.WRAP_CONTENT);
+            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+            w.getDecorView().setSystemUiVisibility(getWindow().getDecorView().getSystemUiVisibility());
+        }
+        dlg.show();
+    }
+
     private boolean askedStorage;
+    private boolean lastAccess;
 
     private void ensureStorage() {
         if (GameFiles.hasAccess(this) || askedStorage) return;
         askedStorage = true;
-        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("Dead Zone folder")
-                .setMessage("Allow file access so your worlds, name and server files are saved in /storage/emulated/0/Dead Zone and survive updates.")
-                .setPositiveButton("Allow", (d, w) -> requestStorage())
-                .setNegativeButton("Not now", null)
-                .show();
+        themedDialog("Dead Zone folder",
+                "Allow file access so your worlds, name and server files are saved in /storage/emulated/0/Dead Zone and survive updates.",
+                null, "Allow", this::requestStorage, "Not now");
     }
 
     private void requestStorage() {
@@ -541,19 +601,14 @@ public class MainActivity extends Activity implements Game.Ui {
         if (ren != null) name.setText(ren.name);
         else box.addView(seed);
         String ok = L.t(ren == null ? "w_createw" : "w_rename");
-        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle(ok)
-                .setView(box)
-                .setPositiveButton(ok, (d, w) -> {
-                    if (ren == null) {
-                        selWorld = store.add(WorldStore.parseSeed(seed.getText().toString()), name.getText().toString());
-                    } else {
-                        store.rename(ren.id, name.getText().toString());
-                    }
-                    fillWorlds();
-                })
-                .setNegativeButton(L.t("s_back"), null)
-                .show();
+        themedDialog(ok, null, box, ok, () -> {
+            if (ren == null) {
+                selWorld = store.add(WorldStore.parseSeed(seed.getText().toString()), name.getText().toString());
+            } else {
+                store.rename(ren.id, name.getText().toString());
+            }
+            fillWorlds();
+        }, L.t("s_back"));
     }
 
     private void openWorlds(boolean host) {
@@ -651,6 +706,7 @@ public class MainActivity extends Activity implements Game.Ui {
         title.setGravity(Gravity.CENTER);
         col.addView(title);
 
+        lastAccess = GameFiles.hasAccess(this);
         LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
         col.addView(text("Folder: " + GameFiles.root(this).getAbsolutePath(), 12, 0xFF999999, false));
         if (!GameFiles.hasAccess(this)) {
@@ -1070,6 +1126,7 @@ public class MainActivity extends Activity implements Game.Ui {
         thermalH.post(thermalTick);
         if (GameFiles.hasAccess(this)) GameFiles.migrateFallback(this);
         else ensureStorage();
+        if (settingsView != null && GameFiles.hasAccess(this) != lastAccess) rebuildUi();
     }
 
     @Override

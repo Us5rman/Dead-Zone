@@ -243,6 +243,23 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         long now = System.nanoTime();
         double dt = last == 0 ? .016 : Math.min((now - last) / 1e9, .05);
         last = now;
+        if (state == MENU || (paused && role == SOLO)) {
+            GLES20.glClearColor(0f, 0f, 0f, 1f);
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
+            if (bhSnd == 1 && state == PLAY) {
+                ui.bhSound(2, 0);
+                bhSnd = 2;
+            } else if (bhSnd != 0 && state != PLAY) {
+                ui.bhSound(0, 0);
+                bhSnd = 0;
+            }
+            try {
+                Thread.sleep(20);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return;
+        }
         if (wave < VOID_WAVE) bhCur += (bhSize(wave) - bhCur) * Math.min(1, dt * .5);
         weather(dt);
         boolean running = state == PLAY && !(paused && role == SOLO);
