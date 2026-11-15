@@ -11,7 +11,8 @@ final class Settings {
     static final float[] DY = {.74f, .84f, .72f, .55f, .82f, .46f, .80f};
     static final float[] BASE_R = {60, 26, 42, 27, 30, 28, 28};
 
-    boolean nativeRes, unlockFps, showFps, showPing, vsync = true;
+    boolean nativeRes, showFps, showPing, vsync = true;
+    int renderDist = 1;
     String lang = "en";
     final float[] x = new float[COUNT], y = new float[COUNT], s = new float[COUNT];
 
@@ -24,7 +25,7 @@ final class Settings {
         if (sys.equals("fa") || sys.equals("ar") || sys.equals("ru")) def = sys;
         lang = sp.getString("lang", def);
         nativeRes = sp.getBoolean("nativeRes", false);
-        unlockFps = sp.getBoolean("unlockFps", false);
+        renderDist = sp.getInt("renderDist", 1);
         showFps = sp.getBoolean("showFps", false);
         showPing = sp.getBoolean("showPing", false);
         vsync = sp.getBoolean("vsync", true);
@@ -40,7 +41,7 @@ final class Settings {
         SharedPreferences.Editor e = sp.edit();
         e.putString("lang", lang);
         e.putBoolean("nativeRes", nativeRes);
-        e.putBoolean("unlockFps", unlockFps);
+        e.putInt("renderDist", renderDist);
         e.putBoolean("showFps", showFps);
         e.putBoolean("showPing", showPing);
         e.putBoolean("vsync", vsync);

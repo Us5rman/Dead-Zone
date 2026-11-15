@@ -32,6 +32,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         void redraw();
 
         void thunder(int idx, float vol);
+
+        void rain(float level);
     }
 
     static final int SOLO = 0, HOST = 1, CLIENT = 2;
@@ -137,6 +139,9 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     double ambI = .9, flickT, lightWait = 60 + Math.random() * 540, lightClock = -1, thunderT, boltI;
     boolean thunderDone;
     private static final float[] NOREF = {0f, 0f, 0f};
+    private static final float[] FAR = {60f, 100f, 150f, 220f};
+    private int frameN;
+    private double weatherT, rainSent = -1, rainClock;
     int bgHex = 0x070b10;
 
     // things in the world
@@ -210,6 +215,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         double dt = last == 0 ? .016 : Math.min((now - last) / 1e9, .05);
         last = now;
         bhCur += (bhSize(wave) - bhCur) * Math.min(1, dt * .5);
+        weather(dt);
         if (state == PLAY && !(paused && role == SOLO)) update(dt);
         else tickLights(dt);
         render();
@@ -219,25 +225,6 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             hud.fps = frames;
             frames = 0;
             fpsT = now;
-        }
-        if (!set.unlockFps && !set.vsync) {
-            long wait = 16666667L - (System.nanoTime() - now);
-            if (wait > 1000000L) {
-                try {
-                    Thread.sleep(wait / 1000000L);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-        }
-    }
-
-    /** vsync on or off, called on the gl thread */
-    void applyGl() {
-        try {
-            EGL14.eglSwapInterval(EGL14.eglGetCurrentDisplay(), set.vsync ? 1 : 0);
-        } catch (Exception e) {
-            // not every driver lets us change it
         }
     }
 
@@ -250,7 +237,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         float[] viewM = new float[16];
         Matrix.invertM(viewM, 0, cw, 0);
         float[] proj = new float[16];
-        Matrix.perspectiveM(proj, 0, (float) fovCur, (float) vw / vh, .1f, 160f);
+        Matrix.perspectiveM(proj, 0, (float) fovCur, (float) vw / vh, .1f, FAR[Math.max(0, Math.min(3, set.renderDist))] + 20f);
         float[] vp = Xf.mul(proj, viewM);
 
         float[] plPos = new float[24], plCol = new float[24], plRange = new float[8];
@@ -287,9 +274,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         Gfx.bh = (float) bhCur;
         Gfx.frame(vp, camPos, fwd, amb, plPos, plCol, plRange, n);
 
+        frameN++;
+        float farD = FAR[Math.max(0, Math.min(3, set.renderDist))];
         boolean refl = Sky.reflOk && pitch + kc + dvPitch < .8;
         Gfx.reflOn = refl;
-        if (refl) {
+        if (refl && (frameN & 1) == 0) {
             float[] flipM = Xf.ident();
             flipM[5] = -1f;
             float[] vpR = Xf.mul(vp, flipM);
@@ -297,7 +286,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             Gfx.setVP(vpR);
             Gfx.setRefl(true, 0, 1, 0, 0, .12f);
             world.draw(false);
-            drawEntities();
+            drawEntities(camPos, 28);
             Sky.drawSky(vp, camPos, new float[]{0f, 1f, 0f});
             Bolt.draw(vpR, (float) boltI);
             Gfx.setRefl(false, 0, 1, 0, 0, 0);
@@ -307,7 +296,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
         float[] mir = Sky.reflOk ? pickMirror(camPos, fwd) : null;
         Gfx.setMirror(mir != null, mir);
-        if (mir != null) {
+        if (mir != null && (frameN & 1) == 1) {
             float[] mm = Xf.ident();
             mm[0] = 1 - 2 * mir[0] * mir[0];
             mm[2] = -2 * mir[0] * mir[2];
@@ -320,7 +309,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             Gfx.setVP(vpM);
             Gfx.setRefl(true, mir[0], 0, mir[2], mir[3], .25f);
             world.draw(false);
-            drawEntities();
+            drawEntities(camPos, 28);
             Sky.drawSky(vp, camPos, new float[]{mir[0], 0f, mir[2]});
             Bolt.draw(vpM, (float) boltI);
             Gfx.setRefl(false, 0, 1, 0, 0, 0);
@@ -334,7 +323,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
 
         world.draw(false);
-        drawEntities();
+        drawEntities(camPos, farD + 5);
         gun.gun.draw(cw, false);
 
         Sky.drawSky(vp, camPos, NOREF);
@@ -386,8 +375,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         thunderDone = false;
     }
 
-    private void drawEntities() {
+    private void drawEntities(float[] cam, double maxD) {
+        double m2 = maxD * maxD;
         for (Zombie z : zs) {
+            double ex = z.x - cam[0], ez = z.z - cam[2];
+            if (ex * ex + ez * ez > m2) continue;
             z.o.px = z.x;
             z.o.pz = z.z;
             z.o.ry = z.ry;
@@ -401,6 +393,45 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             bloodNode.draw(Xf.ID, false);
         }
         for (Debris d : deb) d.n.draw(Xf.ID, false);
+    }
+
+    private double hash2(int i, int j) {
+        long h = i * 374761393L + j * 668265263L + worldSeed * 1274126177L;
+        h = (h ^ (h >> 13)) * 1274126177L;
+        h ^= h >> 16;
+        return (h & 0xffff) / 65535.0;
+    }
+
+    private double vnoise2(double x, double y) {
+        int i = (int) Math.floor(x), j = (int) Math.floor(y);
+        double fx = x - i, fy = y - j;
+        fx = fx * fx * (3 - 2 * fx);
+        fy = fy * fy * (3 - 2 * fy);
+        double a = hash2(i, j), b = hash2(i + 1, j), c = hash2(i, j + 1), d = hash2(i + 1, j + 1);
+        return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
+    }
+
+    private double rainAt(double x, double z, double t) {
+        double n = vnoise2(x * .012 + t * .004, z * .012 - t * .003) * .7 + vnoise2(x * .03 - t * .01, z * .03 + t * .006) * .3;
+        double u = Math.max(0, Math.min(1, (n - .38) / .34));
+        return u * u * (3 - 2 * u);
+    }
+
+    private void weather(double dt) {
+        weatherT += dt;
+        double target = rainAt(cx, cz, weatherT);
+        double k = Math.min(1, dt * .7);
+        double r = Gfx.rain + (target - Gfx.rain) * k;
+        Gfx.rain = (float) r;
+        double w = Gfx.wet;
+        w += r > w ? (r - w) * Math.min(1, dt * .15) : (r - w) * Math.min(1, dt * .02);
+        Gfx.wet = (float) w;
+        rainClock -= dt;
+        if (rainClock <= 0 && Math.abs(r - rainSent) > .02) {
+            rainClock = .25;
+            rainSent = r;
+            ui.rain((float) r);
+        }
     }
 
     static double bhSize(int w) {
@@ -1265,10 +1296,6 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             d.n.rz += d.wz * dt;
             if (d.n.py < d.h) {
                 d.n.py = d.h;
-                if (d.vy < -.8 && d.bounces < 2) {
-                    if (d.mag) sfx.tone(180, .06, Sfx.TRI, .12);
-                    else sfx.tone(3400 + rng.nextDouble() * 600, .06, Sfx.SINE, .035);
-                }
                 d.bounces++;
                 d.vy = -d.vy * d.b;
                 d.vx *= .55;
@@ -1427,8 +1454,6 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             q.lR.rx = -w;
             if (q.f != q.lf) {
                 q.lf = q.f;
-                double d = Math.hypot(q.x - cx, q.z - cz);
-                sfx.tone(180, .12, Sfx.SAW, Math.min(.15, .6 / (1 + d)));
             }
         }
     }
@@ -1485,7 +1510,6 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         }
         slideT = 0;
         airFast = false;
-        sfx.noise(.25, .3, 1800);
     }
 
     private void startSlide() {
@@ -1506,7 +1530,6 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         hvx = dvx * slideV0;
         hvz = dvz * slideV0;
         slideT = SLIDE_TIME;
-        sfx.noise(.35, .3, 1200);
     }
 
     private void land(double impact) {
@@ -1520,7 +1543,6 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             sfx.tone(80, .12, Sfx.TRI, .2);
         } else if (impact > 4) {
             crouchOff += Math.min(.35, impact * .035);
-            sfx.noise(.08, Math.min(.35, impact * .04), 700);
         }
     }
 

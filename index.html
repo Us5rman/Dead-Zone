@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Dead Zone</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="font-family: sans-serif; padding: 20px;">
+  <h2>DEAD ZONE</h2>
+  <p><strong>Your ID:\</strong> <span id="my-id">Connecting...</span></p>
+  
+  <input type="text" id="remote-id" placeholder="Enter target Peer ID">
+  <button onclick="connectToPeer()">Connect</button>
+  
+  <div id="chat-box" style="margin-top: 20px;">
+    <input type="text" id="msg" placeholder="Type a message">
+    <button onclick="sendMsg()">Send</button>
+  </div>
+  
+  <pre id="logs" style="background: #f4f4f4; padding: 10px; margin-top: 20px;"></pre>
+
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script>
+    let activeConn = null;
+    const logs = document.getElementById('logs');
+    const log = (text) => logs.innerText += text + '\n';
+
+    const peer = new Peer({
+      host: window.location.hostname,
+      port: window.location.port || 3000,
+      path: '/peerjs/deadzone'
+    });
+
+    peer.on('open', (id) => {
+      document.getElementById('my-id').innerText = id;
+      log('Connected to Dead Zone server.');
+    });
+
+    peer.on('connection', (conn) => {
+      activeConn = conn;
+      log('Incoming connection from: ' + conn.peer);
+      setupReceiver(conn);
+    });
+
+    function connectToPeer() {
+      const remoteId = document.getElementById('remote-id').value;
+      activeConn = peer.connect(remoteId);
+      activeConn.on('open', () => {
+        log('Connected to: ' + remoteId);
+      });
+      setupReceiver(activeConn);
+    }
+
+    function setupReceiver(conn) {
+      conn.on('data', (data) => {
+        log('Peer: ' + data);
+      });
+    }
+
+    function sendMsg() {
+      const input = document.getElementById('msg');
+      if (activeConn && activeConn.open) {
+        activeConn.send(input.value);
+        log('You: ' + input.value);
+        input.value = '';
+      } else {
+        log('Error: Not connected to any peer.');
+      }
+    }
+  </script>
+</body>
+</html>

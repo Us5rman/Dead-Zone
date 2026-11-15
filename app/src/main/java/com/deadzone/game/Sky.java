@@ -20,7 +20,7 @@ final class Sky {
     private static int rw, rh;
     static boolean reflOk;
     private static int sInv, sCam, sBH, sHor, sTime, sFlash, sCover, sNoise, sSize, sCut, sRefN;
-    private static int rVP, rCam, rTime, rFlash, rFogCol, rFogDen, rMoonCol;
+    private static int rVP, rCam, rTime, rFlash, rFogCol, rFogDen, rMoonCol, rRain;
 
     private static final String SKY_VERT = """
             attribute vec2 aP;
@@ -60,12 +60,12 @@ final class Sky {
             float fbm4(vec2 p) {
               float v = 0.0;
               float a = 0.5;
-              for (int i = 0; i < 4; i++) {
+              for (int i = 0; i < 3; i++) {
                 v += a * vn(p);
                 p = mat2(1.6, 1.2, -1.2, 1.6) * p + 7.3;
                 a *= 0.5;
               }
-              return v * 1.0667;
+              return v * 1.1429;
             }
 
             float fbm2(vec2 p) {
@@ -156,6 +156,7 @@ final class Sky {
             uniform mat4 uVP;
             uniform vec3 uCam;
             uniform float uTime;
+            uniform float uRain;
             attribute vec3 aSeed;
             attribute vec2 aCorner;
             varying vec2 vC;
@@ -163,7 +164,7 @@ final class Sky {
             varying float vA;
             void main() {
               float r = fract(aSeed.x * 37.17 + aSeed.z * 91.31 + aSeed.y * 13.7);
-              vec3 vel = vec3(-1.6, -(11.0 + r * 5.0), -0.8);
+              vec3 vel = vec3(-1.6, -(11.0 + r * 5.0), -0.8) * (0.85 + 0.3 * uRain);
               vec3 axis = normalize(vel);
               vec3 B = vec3(34.0, 20.0, 34.0);
               vec3 q = mod(aSeed * B + vel * uTime - uCam, B);
@@ -179,7 +180,8 @@ final class Sky {
               vC = aCorner;
               vDist = dist;
               vA = 0.35 + 0.65 * clamp(0.015 / w, 0.0, 1.0);
-              if (pos.y < 0.0) {
+              float keep = fract(aSeed.x * 53.7 + aSeed.y * 17.3 + aSeed.z * 7.1);
+              if (pos.y < 0.0 || keep > uRain) {
                 gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
               } else {
                 gl_Position = uVP * vec4(pos, 1.0);
@@ -273,6 +275,7 @@ final class Sky {
         rFogCol = GLES20.glGetUniformLocation(rainProg, "uFogCol");
         rFogDen = GLES20.glGetUniformLocation(rainProg, "uFogDen");
         rMoonCol = GLES20.glGetUniformLocation(rainProg, "uMoonCol");
+        rRain = GLES20.glGetUniformLocation(rainProg, "uRain");
 
         byte[] px = new byte[NS * NS * 4];
         new Random(12345).nextBytes(px);
@@ -396,7 +399,9 @@ final class Sky {
     }
 
     static void drawRain(float[] vp, float[] cam) {
+        if (Gfx.rain < .03f) return;
         GLES20.glUseProgram(rainProg);
+        GLES20.glUniform1f(rRain, Gfx.rain);
         GLES20.glUniformMatrix4fv(rVP, 1, false, vp, 0);
         GLES20.glUniform3f(rCam, cam[0], cam[1], cam[2]);
         GLES20.glUniform1f(rTime, Gfx.time);

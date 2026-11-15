@@ -4,7 +4,7 @@ import android.opengl.GLES20;
 
 final class Gfx {
     static int gen = 0;
-    static float time, flash, bh = .7f;
+    static float time, flash, bh = .7f, rain, wet = .3f;
     static boolean reflOn, reflPass;
     static final float[] FOG = {.038f, .055f, .082f};
     static final float FOG_DEN = .055f;
@@ -13,7 +13,7 @@ final class Gfx {
     static int aPos, aNor, aUv;
 
     private static int prog;
-    private static int uVP, uModel, uTex, uHasTex, uColor, uEmis, uUnlit, uFogOn, uPS, uWet, uPud, uRefPass, uRes, uTimeU, uNoise, uRefl, uRefPl, uThr, uGlass, uMirPl, uMirOn, uMir, uFlashU, uBoltDir;
+    private static int uVP, uModel, uTex, uHasTex, uColor, uEmis, uUnlit, uFogOn, uPS, uWet, uPud, uRefPass, uRes, uTimeU, uNoise, uRefl, uRefPl, uThr, uGlass, uMirPl, uMirOn, uMir, uFlashU, uBoltDir, uBhDir, uBhSize;
     private static int uAmb, uDirV, uDirCol, uCam, uFogCol, uFogDen;
     private static int uNumPl, uPlPos, uPlCol, uPlRange;
     private static int uSpPos, uSpDir, uSpCol, uSpCos0, uSpCos1, uSpRange;
@@ -68,6 +68,8 @@ final class Gfx {
             uniform sampler2D uMir;
             uniform float uFlash;
             uniform vec3 uBoltDir;
+            uniform vec3 uBhDir;
+            uniform float uBhSize;
             uniform float uRefPass;
             uniform float uTime;
             uniform vec2 uRes;
@@ -77,12 +79,6 @@ final class Gfx {
             uniform vec3 uPlPos[8];
             uniform vec3 uPlCol[8];
             uniform float uPlRange[8];
-            uniform vec3 uSpPos;
-            uniform vec3 uSpDir;
-            uniform vec3 uSpCol;
-            uniform float uSpCos0;
-            uniform float uSpCos1;
-            uniform float uSpRange;
             float vn(vec2 p) {
               vec2 i = floor(p);
               vec2 f = fract(p);
@@ -107,7 +103,7 @@ final class Gfx {
                 float pud = 0.0;
                 if (uPud > 0.5) {
                   vec2 pp = vWorld.xz * 0.085;
-                  pud = smoothstep(0.50, 0.58, vn(pp) * 0.65 + vn(pp * 2.7 + 5.0) * 0.35);
+                  pud = smoothstep(0.50, 0.58, vn(pp) * 0.65 + vn(pp * 2.7 + 5.0) * 0.35) * clamp(uWet * 1.5 - 0.3, 0.0, 1.0);
                 }
                 float gloss = max(uWet * (0.35 + 0.65 * up), pud);
                 vec3 albedo = base.rgb * mix(1.0, 0.8, uWet * up) * mix(1.0, 0.55, pud);
@@ -121,13 +117,6 @@ final class Gfx {
                   light += uPlCol[i] * max(dot(n, d / dist), 0.0) * at;
                   scat += uPlCol[i] * at * at;
                 }
-                vec3 sd = uSpPos - vWorld;
-                float sl = max(length(sd), 0.001);
-                vec3 L = sd / sl;
-                float cs = dot(-L, uSpDir);
-                float sa = smoothstep(uSpCos0, uSpCos1, cs) * clamp(1.0 - sl / uSpRange, 0.0, 1.0);
-                light += uSpCol * max(dot(n, L), 0.0) * sa;
-                spec += uSpCol * (0.6 * gloss * sa * pow(max(dot(n, normalize(L + v)), 0.0), 28.0));
                 spec += uDirCol * (4.0 * pud * pow(max(dot(n, normalize(uDirV + v)), 0.0), 240.0));
                 col = albedo * light + uEmis + spec;
                 if (pud > 0.001) {
@@ -161,11 +150,14 @@ final class Gfx {
                 vec3 vd = vWorld - uCam;
                 float dd = length(vd);
                 float hm = max((uCam.y + vWorld.y) * 0.5, 0.0);
-                float fpatch = vn(vWorld.xz * 0.045 + vec2(uTime * 0.025, uTime * 0.015));
-                float den = uFogDen * (0.65 + 0.9 * fpatch) * exp(-hm * 0.11);
+                vec2 wp = vWorld.xz;
+                float fpatch = vn(wp * 0.045 + vec2(uTime * 0.025, uTime * 0.015)) * 0.65 + vn(wp * 0.14 - vec2(uTime * 0.05, -uTime * 0.03)) * 0.35;
+                float den = uFogDen * (0.55 + 1.1 * fpatch) * exp(-hm * 0.16);
                 float f = 1.0 - exp(-den * den * dd * dd);
-                float facing = max(dot(vd / max(dd, 0.001), uBoltDir), 0.0);
-                vec3 fc = uFogCol + vec3(0.30, 0.36, 0.60) * uFlash * (0.25 + 0.75 * facing * facing) + scat * 0.35;
+                vec3 vdn = vd / max(dd, 0.001);
+                float facing = max(dot(vdn, uBoltDir), 0.0);
+                float bhs = pow(max(dot(vdn, uBhDir), 0.0), 3.0);
+                vec3 fc = uFogCol + vec3(0.30, 0.36, 0.60) * uFlash * (0.25 + 0.75 * facing * facing) + scat * 0.35 + vec3(0.30, 0.16, 0.07) * bhs * 0.10 * uBhSize;
                 col = mix(col * exp(-dd * 0.012), fc, clamp(f, 0.0, 1.0));
               }
               gl_FragColor = vec4(col, alpha);
@@ -226,6 +218,8 @@ final class Gfx {
         uMir = loc("uMir");
         uFlashU = loc("uFlash");
         uBoltDir = loc("uBoltDir");
+        uBhDir = loc("uBhDir");
+        uBhSize = loc("uBhSize");
         uAmb = loc("uAmb");
         uDirV = loc("uDirV");
         uDirCol = loc("uDirCol");
@@ -275,19 +269,14 @@ final class Gfx {
         GLES20.glUniform3f(uFogCol, FOG[0], FOG[1], FOG[2]);
         GLES20.glUniform1f(uFlashU, flash);
         GLES20.glUniform3f(uBoltDir, boltDir[0], boltDir[1], boltDir[2]);
-        GLES20.glUniform1f(uFogDen, FOG_DEN);
-        GLES20.glUniform1f(uWet, .9f);
+        GLES20.glUniform1f(uFogDen, FOG_DEN * (.8f + .4f * rain));
+        GLES20.glUniform1f(uWet, .12f + .8f * wet);
+        GLES20.glUniform3f(uBhDir, Sky.BH[0], Sky.BH[1], Sky.BH[2]);
+        GLES20.glUniform1f(uBhSize, bh);
         GLES20.glUniform1f(uNumPl, n);
         GLES20.glUniform3fv(uPlPos, 8, plPos, 0);
         GLES20.glUniform3fv(uPlCol, 8, plCol, 0);
         GLES20.glUniform1fv(uPlRange, 8, plRange, 0);
-        GLES20.glUniform3f(uSpPos, cam[0], cam[1], cam[2]);
-        GLES20.glUniform3f(uSpDir, spotDir[0], spotDir[1], spotDir[2]);
-        float[] sc = Mat.rgb(0xfff0c8);
-        GLES20.glUniform3f(uSpCol, sc[0] * 1.6f, sc[1] * 1.6f, sc[2] * 1.6f);
-        GLES20.glUniform1f(uSpCos0, (float) Math.cos(.55));
-        GLES20.glUniform1f(uSpCos1, (float) Math.cos(.55 * (1 - .45)));
-        GLES20.glUniform1f(uSpRange, 32f);
         GLES20.glUniform1f(uPS, 1.6f);
     }
 

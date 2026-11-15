@@ -114,7 +114,7 @@ public class MainActivity extends Activity implements Game.Ui {
             // keep 60
         }
         WindowManager.LayoutParams lp = getWindow().getAttributes();
-        lp.preferredRefreshRate = set.unlockFps ? best : 60f;
+        lp.preferredRefreshRate = best;
         getWindow().setAttributes(lp);
         gl.queueEvent(new Runnable() {
             @Override
@@ -412,14 +412,6 @@ public class MainActivity extends Activity implements Game.Ui {
                 applyGraphics();
             }
         }), rowLp);
-        col.addView(toggle(L.t("s_unlock"), set.unlockFps, new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton b, boolean on) {
-                set.unlockFps = on;
-                set.save();
-                applyGraphics();
-            }
-        }), rowLp);
         col.addView(toggle(L.t("s_fps"), set.showFps, new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton b, boolean on) {
@@ -442,6 +434,30 @@ public class MainActivity extends Activity implements Game.Ui {
                 applyGraphics();
             }
         }), rowLp);
+
+        TextView rdT = text(L.t("s_rd"), 15, 0xFFd8d8d8, false);
+        rdT.setPadding(dp(4), dp(10), dp(4), dp(4));
+        col.addView(rdT);
+        LinearLayout rds = new LinearLayout(this);
+        rds.setOrientation(LinearLayout.HORIZONTAL);
+        for (int i = 0; i < 4; i++) {
+            final int idx = i;
+            Button b = button(L.t("s_rd" + i), 14);
+            b.setPadding(dp(10), dp(6), dp(10), dp(6));
+            if (i == set.renderDist) style(b, 0xFF8a1a1a, 0xFFffcc33);
+            b.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    set.renderDist = idx;
+                    set.save();
+                    recreate();
+                }
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
+            lp.rightMargin = dp(6);
+            rds.addView(b, lp);
+        }
+        col.addView(rds, new LinearLayout.LayoutParams(-1, -2));
 
         TextView lt = text(L.t("s_lang"), 15, 0xFFd8d8d8, false);
         lt.setPadding(dp(4), dp(10), dp(4), dp(4));
@@ -662,7 +678,68 @@ public class MainActivity extends Activity implements Game.Ui {
 
     @Override
     public void redraw() {
+        long n = android.os.SystemClock.uptimeMillis();
+        if (n - lastRedraw < 28) return;
+        lastRedraw = n;
         overlay.postInvalidateOnAnimation();
+    }
+
+    private long lastRedraw;
+    private final MediaPlayer[] rainP = new MediaPlayer[3];
+    private float rainNow = -1;
+
+    @Override
+    public void rain(final float level) {
+        if (Math.abs(level - rainNow) < .02f && !(level == 0 && rainNow != 0)) return;
+        rainNow = level;
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                applyRain(level);
+            }
+        });
+    }
+
+    private static float tri(float x, float a, float b, float c) {
+        if (x <= a || x >= c) return 0;
+        return x < b ? (x - a) / (b - a) : (c - x) / (c - b);
+    }
+
+    private void applyRain(float level) {
+        try {
+            int[] ids = {R.raw.rain_light, R.raw.rain_mid, R.raw.rain_heavy};
+            float[] v = {Math.max(tri(level, 0f, .25f, .6f), level < .25f ? level * 4f : 0f), tri(level, .3f, .6f, .9f),
+                    Math.max(tri(level, .55f, 1f, 1.5f), level > 1f ? 1f : 0f)};
+            float master = Math.min(1f, .25f + level * .75f);
+            for (int i = 0; i < 3; i++) {
+                if (level < .03f) {
+                    if (rainP[i] != null && rainP[i].isPlaying()) rainP[i].pause();
+                    continue;
+                }
+                if (rainP[i] == null) {
+                    rainP[i] = MediaPlayer.create(this, ids[i]);
+                    if (rainP[i] == null) continue;
+                    rainP[i].setLooping(true);
+                }
+                float vol = v[i] * master * .8f;
+                rainP[i].setVolume(vol, vol);
+                if (!rainP[i].isPlaying()) rainP[i].start();
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void stopRain() {
+        for (int i = 0; i < 3; i++) {
+            if (rainP[i] != null) {
+                try {
+                    rainP[i].release();
+                } catch (Exception ignored) {
+                }
+                rainP[i] = null;
+            }
+        }
+        rainNow = -1;
     }
 
     /* ---- lifecycle ---- */
@@ -684,6 +761,7 @@ public class MainActivity extends Activity implements Game.Ui {
     @Override
     protected void onPause() {
         super.onPause();
+        stopRain();
         gl.onPause();
     }
 
@@ -695,6 +773,7 @@ public class MainActivity extends Activity implements Game.Ui {
 
     @Override
     protected void onDestroy() {
+        stopRain();
         game.release();
         super.onDestroy();
     }
