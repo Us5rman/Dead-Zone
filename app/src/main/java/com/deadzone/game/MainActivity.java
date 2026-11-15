@@ -433,6 +433,13 @@ public class MainActivity extends Activity implements Game.Ui {
                 set.save();
             }
         }), rowLp);
+        col.addView(toggle(L.t("s_autorun"), set.autoRun, new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean on) {
+                set.autoRun = on;
+                set.save();
+            }
+        }), rowLp);
         col.addView(toggle(L.t("s_vsync"), set.vsync, new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton b, boolean on) {

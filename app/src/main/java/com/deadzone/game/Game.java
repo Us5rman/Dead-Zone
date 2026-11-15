@@ -1,5 +1,6 @@
 package com.deadzone.game;
 
+import android.graphics.Color;
 import android.opengl.EGL14;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
@@ -61,9 +62,9 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         String id;
         double x, z, yaw, pitch, ph;
         boolean dead;
-        double y;
+        double y, flashT;
         int f, lf, idx, mode;
-        Node node, inner, lL, lR;
+        Node node, inner, lL, lR, flashN;
     }
 
     static final class Zombie {
@@ -85,6 +86,10 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         double vx, vy, vz, wx, wy, wz, h, b, l = 7;
         boolean mag, rest;
         int bounces;
+    }
+
+    static final class Trail {
+        double ax, ay, az, dx, dy, dz, len, age, life;
     }
 
     final Ui ui;
@@ -124,7 +129,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     // jumping, diving, crawling, sliding
     static final double SLIDE_TIME = .85;
     double jy, vy, hvx, hvz, dvx, dvz, slideT, slideV0, crouchOff, dvPitch, camRoll, crawlPh, fovCur = 70;
-    double wDive, wSlide, wCrawl;
+    double wDive, wSlide, wCrawl, wRun;
     boolean grounded = true, diving, sprint, crawling, airFast;
     private int frames;
     private long fpsT;
@@ -145,6 +150,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     private boolean prevVpSet;
     private double weatherT, rainSent = -1, rainClock;
     int bgHex = 0x070b10;
+    final ArrayList<Trail> trails = new ArrayList<>();
+    private static final double TRACER_SPEED = 380;
+    private final Geo trailGeo = Geo.plane(1, 1);
+    private final Mat mTracer = glowMat(0xffe2a8);
+    private final Mat mGlint = glowMat(0xa8c4ff);
 
     // things in the world
     final ArrayList<Zombie> zs = new ArrayList<>();
@@ -232,6 +242,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         }
     }
 
+    /** vsync on or off, called on the gl thread */
     void applyGl() {
         try {
             EGL14.eglSwapInterval(EGL14.eglGetCurrentDisplay(), set.vsync ? 1 : 0);
@@ -342,6 +353,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         Sky.drawSky(vp, camPos, NOREF);
         Bolt.draw(vp, (float) boltI);
         world.draw(true);
+        drawEntitiesBlend();
+        drawTrails(camPos);
         Sky.drawRain(vp, camPos);
         if (mb) {
             if (!prevVpSet) {
@@ -396,6 +409,118 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         Gfx.boltDir[2] = (float) Bolt.hz;
         thunderT = tt;
         thunderDone = false;
+    }
+
+    private static Mat glowMat(int hex) {
+        Mat m = Mat.basic(hex);
+        m.tex = new Tex(32, 4, false, new Tex.Painter() {
+            @Override
+            public void paint(android.graphics.Canvas c, int w, int h) {
+                for (int i = 0; i < w; i++) {
+                    double u = (i - (w - 1) / 2.0) / (w / 2.0);
+                    Tex.P.setColor(Color.argb((int) (255 * Math.exp(-u * u * 5)), 255, 255, 255));
+                    c.drawRect(i, 0, i + 1, h, Tex.P);
+                }
+            }
+        });
+        m.blend = true;
+        m.additive = true;
+        m.depthWrite = false;
+        m.noFog = true;
+        return m;
+    }
+
+    private void drawEntitiesBlend() {
+        for (Remote q : pl.values()) {
+            if (q.node != null) q.node.draw(Xf.ID, true);
+        }
+    }
+
+    /** a flat ribbon between two points that always faces the camera */
+    private void ribbon(Trail t, double s0, double s1, double width, Mat m, double alpha, float[] cam) {
+        double mx = t.ax + t.dx * (s0 + s1) / 2, my = t.ay + t.dy * (s0 + s1) / 2, mz = t.az + t.dz * (s0 + s1) / 2;
+        double tx = cam[0] - mx, ty = cam[1] - my, tz = cam[2] - mz;
+        double rx = t.dy * tz - t.dz * ty, ry = t.dz * tx - t.dx * tz, rz = t.dx * ty - t.dy * tx;
+        double rl = Math.sqrt(rx * rx + ry * ry + rz * rz);
+        if (rl < 1e-6) return;
+        rx /= rl;
+        ry /= rl;
+        rz /= rl;
+        double nx = ry * t.dz - rz * t.dy, ny = rz * t.dx - rx * t.dz, nz = rx * t.dy - ry * t.dx;
+        double len = s1 - s0;
+        float[] mm = new float[16];
+        mm[0] = (float) (rx * width);
+        mm[1] = (float) (ry * width);
+        mm[2] = (float) (rz * width);
+        mm[4] = (float) (t.dx * len);
+        mm[5] = (float) (t.dy * len);
+        mm[6] = (float) (t.dz * len);
+        mm[8] = (float) nx;
+        mm[9] = (float) ny;
+        mm[10] = (float) nz;
+        mm[12] = (float) mx;
+        mm[13] = (float) my;
+        mm[14] = (float) mz;
+        mm[15] = 1f;
+        m.a = (float) alpha;
+        Gfx.useMat(m);
+        Gfx.draw(trailGeo, mm);
+    }
+
+    private void drawTrails(float[] cam) {
+        for (Trail t : trails) {
+            double head = Math.min(t.len, t.age * TRACER_SPEED), tail = Math.max(0, head - 6);
+            if (head > tail + .05) ribbon(t, tail, head, .07, mTracer, .85, cam);
+            double la = .2 * Math.max(0, 1 - t.age / t.life);
+            if (la > .004) ribbon(t, 0, t.len, .03, mGlint, la, cam);
+        }
+    }
+
+    private void addTrail(double sx, double sy, double sz, double ex, double ey, double ez) {
+        double dx = ex - sx, dy = ey - sy, dz = ez - sz, len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < .5) return;
+        Trail t = new Trail();
+        t.ax = sx;
+        t.ay = sy;
+        t.az = sz;
+        t.dx = dx / len;
+        t.dy = dy / len;
+        t.dz = dz / len;
+        t.len = len;
+        t.life = Math.max(.5, len / TRACER_SPEED + .15);
+        if (trails.size() > 40) trails.remove(0);
+        trails.add(t);
+    }
+
+    /** trail for somebody else's shot: starts near their gun, ends where the bullet stopped */
+    private void addTrailFromEye(double ox, double oy, double oz, double dx, double dy, double dz,
+                                 double ex, double ey, double ez) {
+        double hl = Math.hypot(dx, dz);
+        double rx = hl > .001 ? -dz / hl : 1, rz = hl > .001 ? dx / hl : 0;
+        addTrail(ox + dx * .9 + rx * .2, oy + dy * .9 - .22, oz + dz * .9 + rz * .2, ex, ey, ez);
+    }
+
+    private double rayEnd(double ox, double oy, double oz, double dx, double dy, double dz) {
+        double t = 70;
+        double w = world.rayWalls(ox, oy, oz, dx, dy, dz);
+        if (w >= 0 && w < t) t = w;
+        if (dy < -1e-4) t = Math.min(t, -oy / dy);
+        for (Zombie z : zs) {
+            if (z.dead) continue;
+            double[] r = hitZombie(z, ox, oy, oz, dx, dy, dz);
+            if (r != null && r[0] < t) t = r[0];
+        }
+        return t;
+    }
+
+    private static JSONArray arr3(double a, double b, double c) {
+        JSONArray r = new JSONArray();
+        try {
+            r.put(r2(a)).put(r2(b)).put(r2(c));
+        } catch (JSONException e) {
+            // nothing sensible to add
+        }
+        return r;
     }
 
     private void drawEntities(float[] cam, double maxD) {
@@ -534,6 +659,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         zmap.clear();
         deb.clear();
         blood.clear();
+        trails.clear();
         rl = 0;
         rlEv = 0;
         sl = 9;
@@ -723,6 +849,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         double l = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
         double dx = d[0] / l, dy = d[1] / l, dz = d[2] / l;
         fired++;
+        double endT = rayEnd(cx, cy, cz, dx, dy, dz);
+        double ex = cx + dx * endT, ey = cy + dy * endT, ez = cz + dz * endT;
+        float[] mz = Xf.point(gunMatrix(), 0, .034, -.27);
+        addTrail(mz[0], mz[1], mz[2], ex, ey, ez);
+        if (role == HOST) bc(Net.obj("t", "trail", "id", "host", "o", arr3(cx, cy, cz), "e", arr3(ex, ey, ez)));
         if (role == CLIENT) {
             JSONArray o = new JSONArray(), dd = new JSONArray();
             try {
@@ -811,7 +942,14 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         Remote q = pl.get(id);
         JSONArray o = m.optJSONArray("o"), d = m.optJSONArray("d");
         if (q == null || q.dead || o == null || d == null) return;
-        resolveHit(id, o.optDouble(0), o.optDouble(1), o.optDouble(2), d.optDouble(0), d.optDouble(1), d.optDouble(2));
+        double ox = o.optDouble(0), oy = o.optDouble(1), oz = o.optDouble(2);
+        double dx = d.optDouble(0), dy = d.optDouble(1), dz = d.optDouble(2);
+        double endT = rayEnd(ox, oy, oz, dx, dy, dz);
+        resolveHit(id, ox, oy, oz, dx, dy, dz);
+        q.flashT = .06;
+        double ex = ox + dx * endT, ey = oy + dy * endT, ez = oz + dz * endT;
+        addTrailFromEye(ox, oy, oz, dx, dy, dz, ex, ey, ez);
+        bc(Net.obj("t", "trail", "id", id, "o", arr3(ox, oy, oz), "e", arr3(ex, ey, ez)));
     }
 
     /* ---- zombies and players ---- */
@@ -893,6 +1031,17 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         g.parts.add(Node.box(.06, .1, .3, .3, 1.34, .6, world.mGun));
         q.lL = limb(g, -.13, .8, Node.box(.18, .8, .18, 0, -.4, 0, world.mPants));
         q.lR = limb(g, .13, .8, Node.box(.18, .8, .18, 0, -.4, 0, world.mPants));
+        Node mf = new Node().at(.3, 1.34, .9);
+        mf.parts.add(new Node.Part(Geo.plane(.28, .28), gun.mFlash, 0, 0, 0));
+        Node.Part f2 = new Node.Part(Geo.plane(.28, .28), gun.mFlash, 0, 0, 0);
+        f2.rz = PI / 4;
+        mf.parts.add(f2);
+        Node.Part f3 = new Node.Part(Geo.plane(.28, .28), gun.mFlash, 0, 0, 0);
+        f3.ry = PI / 2;
+        mf.parts.add(f3);
+        mf.visible = false;
+        g.kids.add(mf);
+        q.flashN = mf;
         root.at(q.x, 0, q.z);
         q.node = root;
         q.inner = g;
@@ -1048,7 +1197,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             fx /= L;
             fz /= L;
         }
-        boolean fast = sprint || stick > .95;
+        boolean fast = sprint || (set.autoRun && stick > .95);
         double sp = crawling ? (fast ? 3.0 : 1.6) : (fast ? 6.5 : 4);
         if (!grounded && airFast) sp *= 1.3;
         boolean moving = Math.hypot(fx, fz) > .1 && free && grounded;
@@ -1108,6 +1257,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         wDive += ((diving ? 1 : 0) - wDive) * Math.min(1, dt * 12);
         wSlide += ((slideT > 0 ? 1 : 0) - wSlide) * Math.min(1, dt * 12);
         wCrawl += ((crawling ? 1 : 0) - wCrawl) * Math.min(1, dt * 10);
+        boolean runPose = moving && fast && !crawling && !diving && slideT <= 0 && !firing;
+        wRun += ((runPose ? 1 : 0) - wRun) * Math.min(1, dt * 8);
         double fovT = 70 + (moving && fast && !crawling ? 6 : 0) + (diving ? 5 : 0) + (slideT > 0 ? 7 : 0);
         fovCur += (fovT - fovCur) * Math.min(1, dt * 6);
         if (moving && !crawling) bob += dt * sp * 1.6;
@@ -1131,11 +1282,14 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         sl += dt;
         dryT -= dt;
 
-        double gx = 0, gy = 0, gz = 0, grx = 0, gry = 0, grz = 0, dr = 0, slp;
+        double gx = 0, gy = 0, gz = 0, grx = 0, gry = 0, grz = 0, dr = 0, slp, lhy = 0, lhz = 0;
         boolean magVis = true;
         if (rl > 0) {
             rl -= dt;
             double p = Math.max(0, Math.min(1, 1 - rl / RT));
+            double hb = p < .1 ? p / .1 : p < .66 ? 1 : p < .78 ? (.78 - p) / .12 : 0;
+            lhy = -.09 * hb;
+            lhz = .03 * hb;
             double[] q = rlPose(p);
             gx = q[0];
             gy = q[1];
@@ -1176,6 +1330,15 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         } else {
             slp = mag <= 0 ? 1 : (sl < .035 ? sl / .035 : sl < .1 ? 1 - (sl - .035) / .065 : 0);
         }
+        double rs = Math.sin(bob), rc = Math.cos(bob);
+        gx += wRun * (.01 + Math.sin(bob * .5) * .03);
+        gy += wRun * (-.07 + Math.abs(rc) * .03);
+        gz += wRun * (.10 + Math.sin(bob * 2) * .012);
+        grx += wRun * (.95 + Math.cos(bob * 2) * .05);
+        gry += wRun * .35;
+        grz += wRun * (-.12 + rs * .06);
+        gun.lh.py = lhy;
+        gun.lh.pz = lhz;
         double c1 = Math.sin(crawlPh), c2 = Math.cos(crawlPh);
         gx += wDive * .04 + wSlide * .10 + wCrawl * (.03 + c1 * .05);
         gy += wDive * -.08 + wSlide * -.10 + wCrawl * (-.06 + Math.abs(c2) * .02);
@@ -1191,9 +1354,9 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         gun.mag.visible = magVis;
         gun.mag.py = -.14 - dr * dr * (3 - 2 * dr) * .3;
         Node g = gun.gun;
-        g.px = .22 + (moving ? Math.sin(bob * .5) * .015 : 0) + gx;
-        g.py = -.2 + (moving ? Math.abs(Math.cos(bob)) * .015 : 0) + gy;
-        g.pz = -.55 + kz + gz;
+        g.px = .17 + (moving ? Math.sin(bob * .5) * .015 : 0) + gx;
+        g.py = -.10 + (moving ? Math.abs(Math.cos(bob)) * .015 : 0) + gy;
+        g.pz = -.45 + kz + gz;
         g.rx = kr + grx;
         g.ry = .07 + gry + kro * .3;
         g.rz = grz + kro;
@@ -1233,6 +1396,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         updateZombies(dt, isHost);
         updateRemotes(dt);
 
+        for (int i = trails.size() - 1; i >= 0; i--) {
+            Trail t = trails.get(i);
+            t.age += dt;
+            if (t.age > t.life) trails.remove(i);
+        }
         for (int i = blood.size() - 1; i >= 0; i--) {
             Blood b = blood.get(i);
             b.l -= dt;
@@ -1470,6 +1638,9 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             m.visible = !q.dead;
             m.py += (q.y - m.py) * a;
             q.inner.rx = q.mode == 1 ? 1.2 : q.mode == 2 ? 1.45 : q.mode == 3 ? -.8 : 0;
+            q.flashT -= dt;
+            q.flashN.visible = q.flashT > 0;
+            if (q.flashT > 0) q.flashN.rz = rng.nextDouble() * 6.28;
             double spd = Math.hypot(m.px - ox, m.pz - oz) / Math.max(dt, .001);
             q.ph += dt * spd * 1.6;
             double w = spd > .5 ? Math.sin(q.ph) * .6 : 0;
@@ -1489,7 +1660,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
     private void resetPhysics() {
         jy = vy = hvx = hvz = slideT = crouchOff = dvPitch = camRoll = crawlPh = 0;
-        wDive = wSlide = wCrawl = 0;
+        wDive = wSlide = wCrawl = wRun = 0;
         fovCur = 70;
         grounded = true;
         diving = crawling = airFast = false;
@@ -1728,6 +1899,20 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             case "ammo":
                 res += m.optInt("n", 3);
                 break;
+            case "trail": {
+                String sid = m.optString("id");
+                JSONArray to = m.optJSONArray("o"), te = m.optJSONArray("e");
+                if (sid.equals(netId) || to == null || te == null) break;
+                double ox = to.optDouble(0), oy = to.optDouble(1), oz = to.optDouble(2);
+                double ex = te.optDouble(0), ey = te.optDouble(1), ez = te.optDouble(2);
+                double dx = ex - ox, dy = ey - oy, dz = ez - oz, dl = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                if (dl > .01) {
+                    addTrailFromEye(ox, oy, oz, dx / dl, dy / dl, dz / dl, ex, ey, ez);
+                    Remote sq = pl.get(sid);
+                    if (sq != null) sq.flashT = .06;
+                }
+                break;
+            }
             case "strike":
                 startStrike(m.optLong("seed"), m.optDouble("rx"), m.optDouble("rz"), m.optDouble("dx"),
                         m.optDouble("dz"), m.optDouble("tt", 1));

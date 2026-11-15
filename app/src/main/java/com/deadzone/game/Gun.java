@@ -15,6 +15,8 @@ final class Gun {
     final Node grip = new Node();
     final Node mag = new Node();
     final Node flash = new Node();
+    final Node rh = new Node();
+    final Node lh = new Node();
 
     final Mat mSt = Mat.color(0xa4aab4).emissive(0x15171a, 1);
     final Mat mFlash = Mat.color(0xffd070).alpha(.9);
@@ -127,12 +129,39 @@ final class Gun {
         flash.parts.add(f3);
         flash.visible = false;
 
+        Mat glove = Mat.color(0x2a2a30).emissive(0x08080a, 1);
+        Mat cuff = Mat.color(0x3a3a42).emissive(0x0a0a0c, 1);
+        Mat sleeve = Mat.color(0x3c4a3c).emissive(0x0a0e0a, 1);
+        rh.parts.add(rot(box(0.058, 0.085, 0.05, 0.004, -0.094, 0.168, glove), -0.2, 0, 0));
+        rh.parts.add(rot(box(0.03, 0.085, 0.09, 0.043, -0.094, 0.11, glove), -0.2, 0, 0));
+        rh.parts.add(rot(box(0.074, 0.022, 0.034, 0.012, -0.07, 0.052, glove), -0.2, 0, 0));
+        rh.parts.add(rot(box(0.074, 0.022, 0.034, 0.012, -0.096, 0.056, glove), -0.2, 0, 0));
+        rh.parts.add(rot(box(0.074, 0.022, 0.034, 0.012, -0.122, 0.06, glove), -0.2, 0, 0));
+        rh.parts.add(rot(box(0.02, 0.024, 0.07, -0.036, -0.05, 0.115, glove), 0, 0.15, 0));
+        rh.parts.add(rot(box(0.07, 0.07, 0.07, 0.052, -0.15, 0.225, cuff), 0.52, 0.14, 0));
+        rh.parts.add(rot(box(0.066, 0.066, 0.5, 0.083, -0.27, 0.41, sleeve), 0.52, 0.14, 0));
+        lh.parts.add(rot(box(0.06, 0.04, 0.085, -0.012, -0.168, 0.115, glove), -0.2, 0, 0));
+        lh.parts.add(rot(box(0.075, 0.02, 0.034, -0.004, -0.135, 0.05, glove), -0.2, 0, 0));
+        lh.parts.add(rot(box(0.075, 0.02, 0.034, -0.004, -0.157, 0.055, glove), -0.2, 0, 0));
+        lh.parts.add(rot(box(0.075, 0.02, 0.034, -0.004, -0.179, 0.06, glove), -0.2, 0, 0));
+        lh.parts.add(rot(box(0.02, 0.022, 0.1, -0.04, -0.06, 0.02, glove), 0, 0, 0));
+        lh.parts.add(rot(box(0.07, 0.07, 0.07, -0.04, -0.18, 0.2, cuff), 0.6, -0.256, 0));
+        lh.parts.add(rot(box(0.066, 0.066, 0.52, -0.095, -0.31, 0.375, sleeve), 0.6, -0.256, 0));
+        gun.kids.add(rh);
+        gun.kids.add(lh);
         gun.kids.add(slide);
         gun.kids.add(ham);
         gun.kids.add(grip);
         gun.kids.add(flash);
         gun.s = 1.1;
         gun.ry = .07;
-        gun.at(.22, -.2, -.55);
+        gun.at(.17, -.10, -.45);
+    }
+
+    private static Node.Part rot(Node.Part p, double rx, double ry, double rz) {
+        p.rx = rx;
+        p.ry = ry;
+        p.rz = rz;
+        return p;
     }
 }

@@ -11,7 +11,7 @@ final class Settings {
     static final float[] DY = {.74f, .84f, .72f, .55f, .82f, .46f, .80f};
     static final float[] BASE_R = {60, 26, 42, 27, 30, 28, 28};
 
-    boolean nativeRes, showFps, showPing, motionBlur, vsync = true;
+    boolean nativeRes, showFps, showPing, motionBlur, vsync = true, autoRun;
     int renderDist = 1;
     String lang = "en";
     final float[] x = new float[COUNT], y = new float[COUNT], s = new float[COUNT];
@@ -27,6 +27,7 @@ final class Settings {
         nativeRes = sp.getBoolean("nativeRes", false);
         renderDist = sp.getInt("renderDist", 1);
         motionBlur = sp.getBoolean("motionBlur", false);
+        autoRun = sp.getBoolean("autoRun", false);
         showFps = sp.getBoolean("showFps", false);
         showPing = sp.getBoolean("showPing", false);
         vsync = sp.getBoolean("vsync", true);
@@ -44,6 +45,7 @@ final class Settings {
         e.putBoolean("nativeRes", nativeRes);
         e.putInt("renderDist", renderDist);
         e.putBoolean("motionBlur", motionBlur);
+        e.putBoolean("autoRun", autoRun);
         e.putBoolean("showFps", showFps);
         e.putBoolean("showPing", showPing);
         e.putBoolean("vsync", vsync);
