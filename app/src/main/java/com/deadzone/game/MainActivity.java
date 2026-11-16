@@ -39,7 +39,10 @@ public class MainActivity extends Activity implements Game.Ui {
     private Game game;
     private GLSurfaceView gl;
     private Overlay overlay;
-    private View menu, settingsView, over, editBar, worldsView, multiView;
+    private View menu, settingsView, over, editBar, worldsView, multiView, serversView;
+    private LinearLayout multiMain, multiHost, sList;
+    private TextView pingT;
+    private boolean hostPublic;
     private Button exitBtn, wPlay, wRen, wDel;
     private LinearLayout wList;
     private WorldStore.Info selWorld;
@@ -456,6 +459,7 @@ public class MainActivity extends Activity implements Game.Ui {
         menu = buildMenu();
         worldsView = buildWorlds();
         multiView = buildMulti();
+        serversView = buildServers();
         settingsView = buildSettings();
         over = buildOver();
         editBar = buildEditBar();
@@ -463,12 +467,14 @@ public class MainActivity extends Activity implements Game.Ui {
         menu.setVisibility(View.VISIBLE);
         root.addView(worldsView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(multiView, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(serversView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(settingsView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(over, new FrameLayout.LayoutParams(-1, -1));
         root.addView(editBar, new FrameLayout.LayoutParams(-1, -2));
         settingsView.setVisibility(View.GONE);
         worldsView.setVisibility(View.GONE);
         multiView.setVisibility(View.GONE);
+        serversView.setVisibility(View.GONE);
         over.setVisibility(View.GONE);
         editBar.setVisibility(View.GONE);
         setContentView(root);
@@ -547,25 +553,28 @@ public class MainActivity extends Activity implements Game.Ui {
         int bg = menu.getBackground() instanceof android.graphics.drawable.ColorDrawable
                 ? ((android.graphics.drawable.ColorDrawable) menu.getBackground()).getColor() : 0x00000000;
         int menuVis = menu.getVisibility(), setVis = settingsView.getVisibility(), worldsVis = worldsView.getVisibility();
-        int multiVis = multiView.getVisibility();
+        int multiVis = multiView.getVisibility(), srvVis = serversView.getVisibility();
         int overVis = over.getVisibility(), editVis = editBar.getVisibility();
         CharSequence ot = overText.getText();
         int againVis = again.getVisibility();
         root.removeView(menu);
         root.removeView(worldsView);
         root.removeView(multiView);
+        root.removeView(serversView);
         root.removeView(settingsView);
         root.removeView(over);
         root.removeView(editBar);
         menu = buildMenu();
         worldsView = buildWorlds();
         multiView = buildMulti();
+        serversView = buildServers();
         settingsView = buildSettings();
         over = buildOver();
         editBar = buildEditBar();
         root.addView(menu, new FrameLayout.LayoutParams(-1, -1));
         root.addView(worldsView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(multiView, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(serversView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(settingsView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(over, new FrameLayout.LayoutParams(-1, -1));
         root.addView(editBar, new FrameLayout.LayoutParams(-1, -2));
@@ -574,6 +583,7 @@ public class MainActivity extends Activity implements Game.Ui {
         settingsView.setVisibility(setVis);
         worldsView.setVisibility(worldsVis);
         multiView.setVisibility(multiVis);
+        serversView.setVisibility(srvVis);
         exitBtn.setVisibility(resumeVis);
         over.setVisibility(overVis);
         editBar.setVisibility(editVis);
@@ -826,11 +836,11 @@ public class MainActivity extends Activity implements Game.Ui {
     }
 
     private View buildMulti() {
-        LinearLayout col = new LinearLayout(this);
-        col.setOrientation(LinearLayout.VERTICAL);
-        col.setGravity(Gravity.TOP | Gravity.START);
-        col.setPadding(dp(14), dp(10), dp(14), dp(10));
-        col.addView(text(L.t("multi"), 26, 0xFFcc2222, true));
+        FrameLayout f = new FrameLayout(this);
+        f.setBackgroundColor(0xFF000000);
+        FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
+        tp.setMargins(dp(14), dp(10), 0, 0);
+        f.addView(text(L.t("multi"), 26, 0xFFcc2222, true), tp);
 
         nameIn = field(L.t("p_name"));
         nameIn.setText(GameFiles.playerName(this));
@@ -853,48 +863,195 @@ public class MainActivity extends Activity implements Game.Ui {
             }
         });
         game.myName = GameFiles.playerName(this);
+        FrameLayout.LayoutParams np = new FrameLayout.LayoutParams(dp(200), -2, Gravity.TOP | Gravity.END);
+        np.setMargins(0, dp(10), dp(14), 0);
+        f.addView(nameIn, np);
 
-        Button host = button(L.t("host"), 15);
-        Button join = button(L.t("join"), 15);
+        Button host = button(L.t("m_host"), 16);
+        Button join = button(L.t("join"), 16);
+        Button priv = button(L.t("m_private"), 16);
+        Button pub = button(L.t("m_public"), 16);
         Button back = button(L.t("s_back"), 15);
+        status = text("", 13, 0xFFcccc88, false);
+        status.setGravity(Gravity.CENTER);
+        status.setTextDirection(L.rtl() ? View.TEXT_DIRECTION_RTL : View.TEXT_DIRECTION_LTR);
+
+        multiMain = new LinearLayout(this);
+        multiMain.setOrientation(LinearLayout.VERTICAL);
+        multiHost = new LinearLayout(this);
+        multiHost.setOrientation(LinearLayout.VERTICAL);
+        multiHost.setVisibility(View.GONE);
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(240), -2);
+        bp.topMargin = dp(10);
+        multiMain.addView(host, bp);
+        multiMain.addView(join, bp);
+        multiHost.addView(priv, bp);
+        multiHost.addView(pub, bp);
+
+        LinearLayout cc = new LinearLayout(this);
+        cc.setOrientation(LinearLayout.VERTICAL);
+        cc.setGravity(Gravity.CENTER_HORIZONTAL);
+        cc.addView(multiMain);
+        cc.addView(multiHost);
+        cc.addView(status, new LinearLayout.LayoutParams(dp(240), -2));
+        f.addView(cc, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+
+        FrameLayout.LayoutParams kp = new FrameLayout.LayoutParams(dp(240), -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        kp.bottomMargin = dp(18);
+        f.addView(back, kp);
+
+        host.setOnClickListener(v -> {
+            multiMain.setVisibility(View.GONE);
+            multiHost.setVisibility(View.VISIBLE);
+        });
+        priv.setOnClickListener(v -> {
+            hostPublic = false;
+            openWorlds(true);
+        });
+        pub.setOnClickListener(v -> {
+            hostPublic = true;
+            openWorlds(true);
+        });
+        join.setOnClickListener(v -> openServers());
+        back.setOnClickListener(v -> {
+            if (multiHost.getVisibility() == View.VISIBLE) {
+                multiHost.setVisibility(View.GONE);
+                multiMain.setVisibility(View.VISIBLE);
+                return;
+            }
+            multiView.setVisibility(View.GONE);
+            menu.setVisibility(View.VISIBLE);
+        });
+        return f;
+    }
+
+    private View buildServers() {
+        FrameLayout f = new FrameLayout(this);
+        f.setBackgroundColor(0xFF000000);
+        FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        tp.topMargin = dp(8);
+        f.addView(text(L.t("m_servers"), 24, 0xFFcc2222, true), tp);
+        pingT = text("", 13, 0xFFcccc88, false);
+        FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        pp.setMargins(0, dp(14), dp(14), 0);
+        f.addView(pingT, pp);
+
+        ScrollView sv = new ScrollView(this);
+        sList = new LinearLayout(this);
+        sList.setOrientation(LinearLayout.VERTICAL);
+        sv.addView(sList, new FrameLayout.LayoutParams(-1, -2));
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        int lw = Math.min(dp(560), (int) (dm.widthPixels * .66f));
+        FrameLayout.LayoutParams sp = new FrameLayout.LayoutParams(lw, -1, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        sp.topMargin = dp(50);
+        sp.bottomMargin = dp(92);
+        f.addView(sv, sp);
+
         code = field(L.t("code"));
         code.setTextSize(18);
         code.setGravity(Gravity.CENTER);
         code.setFilters(new InputFilter[]{new InputFilter.AllCaps(), new InputFilter.LengthFilter(4)});
-        status = text("", 13, 0xFFcccc88, false);
-        status.setTextDirection(L.rtl() ? View.TEXT_DIRECTION_RTL : View.TEXT_DIRECTION_LTR);
+        Button join = button(L.t("join"), 13);
+        Button ping = button(L.t("m_ping"), 13);
+        Button back = button(L.t("s_back"), 13);
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(dp(90), -2);
+        cp.rightMargin = dp(6);
+        bar.addView(code, cp);
+        Button[] bs = {join, ping, back};
+        for (Button b : bs) {
+            b.setPadding(dp(8), dp(8), dp(8), dp(8));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
+            lp.leftMargin = dp(4);
+            lp.rightMargin = dp(4);
+            bar.addView(b, lp);
+        }
+        FrameLayout.LayoutParams bpp = new FrameLayout.LayoutParams(Math.min(dp(640), (int) (dm.widthPixels * .94f)), -2,
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        bpp.bottomMargin = dp(18);
+        f.addView(bar, bpp);
 
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(230), -2);
-        bp.topMargin = dp(8);
-        col.addView(nameIn, bp);
-        col.addView(host, bp);
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(code, new LinearLayout.LayoutParams(dp(90), -2));
-        LinearLayout.LayoutParams jp = new LinearLayout.LayoutParams(0, -2, 1f);
-        jp.leftMargin = dp(8);
-        row.addView(join, jp);
-        col.addView(row, bp);
-        col.addView(back, bp);
-        col.addView(status, bp);
-
-        host.setOnClickListener(v -> openWorlds(true));
-        join.setOnClickListener(v -> {
-            final String c = code.getText().toString();
-            InputMethodManager im = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-            if (im != null) im.hideSoftInputFromWindow(code.getWindowToken(), 0);
-            onGl(() -> game.startJoin(c));
-        });
+        join.setOnClickListener(v -> joinRoom(code.getText().toString()));
+        ping.setOnClickListener(v -> refreshServers());
         back.setOnClickListener(v -> {
-            multiView.setVisibility(View.GONE);
-            menu.setVisibility(View.VISIBLE);
+            serversView.setVisibility(View.GONE);
+            multiView.setVisibility(View.VISIBLE);
         });
+        return f;
+    }
 
-        ScrollView sv = new ScrollView(this);
-        sv.setBackgroundColor(0xFF000000);
-        sv.addView(col, new FrameLayout.LayoutParams(-1, -2));
-        return sv;
+    private void openServers() {
+        multiView.setVisibility(View.GONE);
+        serversView.setVisibility(View.VISIBLE);
+        refreshServers();
+    }
+
+    private void joinRoom(final String c) {
+        InputMethodManager im = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (im != null) im.hideSoftInputFromWindow(code.getWindowToken(), 0);
+        serversView.setVisibility(View.GONE);
+        multiView.setVisibility(View.VISIBLE);
+        onGl(() -> game.startJoin(c));
+    }
+
+    private void refreshServers() {
+        pingT.setText("PING ...");
+        sList.removeAllViews();
+        game.browse(new Net.BrowseCb() {
+            @Override
+            public void result(long ms, org.json.JSONArray rooms) {
+                pingT.setText("PING " + ms + " ms");
+                fillServers(rooms);
+            }
+
+            @Override
+            public void fail() {
+                pingT.setText("PING --");
+                sList.removeAllViews();
+                TextView t = text(L.t("m_nocon"), 14, 0xFF888888, false);
+                t.setGravity(Gravity.CENTER);
+                t.setPadding(0, dp(30), 0, 0);
+                sList.addView(t, new LinearLayout.LayoutParams(-1, -2));
+            }
+        });
+    }
+
+    private void fillServers(org.json.JSONArray rooms) {
+        sList.removeAllViews();
+        if (rooms.length() == 0) {
+            TextView t = text(L.t("m_nosrv"), 14, 0xFF888888, false);
+            t.setGravity(Gravity.CENTER);
+            t.setPadding(0, dp(30), 0, 0);
+            sList.addView(t, new LinearLayout.LayoutParams(-1, -2));
+            return;
+        }
+        for (int i = 0; i < rooms.length(); i++) {
+            final org.json.JSONObject r = rooms.optJSONObject(i);
+            if (r == null) continue;
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(14), dp(10), dp(14), dp(10));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(0xFF0e0e0e);
+            bg.setStroke(dp(2), 0xFF2a2a2a);
+            row.setBackground(bg);
+            LinearLayout info = new LinearLayout(this);
+            info.setOrientation(LinearLayout.VERTICAL);
+            String nm = r.optString("name");
+            info.addView(text(nm.isEmpty() ? r.optString("code") : nm, 17, Color.WHITE, true));
+            info.addView(text(r.optString("host") + " · " + r.optInt("n") + "/" + r.optInt("max"), 12, 0xFFaaaaaa, false));
+            row.addView(info, new LinearLayout.LayoutParams(0, -2, 1f));
+            Button jb = button(L.t("join"), 13);
+            setBtn(jb, r.optInt("n") < r.optInt("max"));
+            row.addView(jb, new LinearLayout.LayoutParams(dp(90), -2));
+            jb.setOnClickListener(v -> joinRoom(r.optString("code")));
+            LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, -2);
+            rp.bottomMargin = dp(8);
+            sList.addView(row, rp);
+        }
     }
 
     /* ---- worlds ---- */
@@ -986,6 +1143,8 @@ public class MainActivity extends Activity implements Game.Ui {
         fillWorlds();
         menu.setVisibility(View.GONE);
         multiView.setVisibility(View.GONE);
+        multiMain.setVisibility(View.VISIBLE);
+        multiHost.setVisibility(View.GONE);
         worldsView.setVisibility(View.VISIBLE);
     }
 
@@ -997,7 +1156,7 @@ public class MainActivity extends Activity implements Game.Ui {
             store.hostFolder(inf);
         }
         onGl(() -> {
-            if (host) game.startHost(inf.seed, inf.id, inf.wave);
+            if (host) game.startHost(inf.seed, inf.id, inf.wave, hostPublic, inf.name);
             else game.startSolo(inf.seed, inf.id, inf.wave);
         });
     }
@@ -1341,6 +1500,7 @@ public class MainActivity extends Activity implements Game.Ui {
                 settingsView.setVisibility(View.GONE);
                 worldsView.setVisibility(View.GONE);
                 multiView.setVisibility(View.GONE);
+                serversView.setVisibility(View.GONE);
                 menu.setVisibility(View.VISIBLE);
             }
         });
@@ -1571,6 +1731,16 @@ public class MainActivity extends Activity implements Game.Ui {
         if (worldsView.getVisibility() == View.VISIBLE) {
             worldsView.setVisibility(View.GONE);
             (worldsHost ? multiView : menu).setVisibility(View.VISIBLE);
+            return;
+        }
+        if (serversView.getVisibility() == View.VISIBLE) {
+            serversView.setVisibility(View.GONE);
+            multiView.setVisibility(View.VISIBLE);
+            return;
+        }
+        if (multiView.getVisibility() == View.VISIBLE && multiHost.getVisibility() == View.VISIBLE) {
+            multiHost.setVisibility(View.GONE);
+            multiMain.setVisibility(View.VISIBLE);
             return;
         }
         if (multiView.getVisibility() == View.VISIBLE) {

@@ -927,7 +927,16 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         startGame(false);
     }
 
-    void startHost(long seed, String id, int fromWave) {
+    private boolean pendPub;
+    private String pendName = "";
+
+    void browse(Net.BrowseCb cb) {
+        net.browse(cb);
+    }
+
+    void startHost(long seed, String id, int fromWave, boolean pub, String wname) {
+        pendPub = pub;
+        pendName = wname;
         pendSeed = seed;
         pendId = id;
         pendWave = fromWave;
@@ -936,7 +945,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
     private void hostNow() {
         roomCode = newCode();
-        net.host(roomCode);
+        net.host(roomCode, pendPub, pendName, myName);
     }
 
     volatile String myName = "Player";
