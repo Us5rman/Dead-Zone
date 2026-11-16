@@ -28,7 +28,7 @@ if grep -q "YOUR-SERVER" "$CONF"; then
   fi
 fi
 
-code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $T" "https://api.github.com/repos/$U/$R")
+code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $T" "https://api.github.com/repos/$U/$R" || echo 000)
 if [ "$code" = "404" ]; then
   echo "creating repo $R"
   curl -s -o /dev/null -X POST -H "Authorization: token $T" \

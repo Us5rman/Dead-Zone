@@ -77,26 +77,188 @@ public class MainActivity extends Activity implements Game.Ui {
     private float d;
     private FrameLayout root;
     private SoundPool pool;
+    /* ---- themed chat: transparent panel docked at the bottom with its own keyboard ---- */
+    private View chatPanel;
+    private TextView chatLog, chatInput;
+    private final StringBuilder chatText = new StringBuilder();
+    private boolean chatCaps;
+    private int chatLang;
+    private LinearLayout chatKeys;
+    private final android.os.Handler chatH = new android.os.Handler();
+    private final Runnable chatTick = new Runnable() {
+        @Override
+        public void run() {
+            if (chatPanel == null) return;
+            chatLog.setText(android.text.TextUtils.join("\n", lastLines(5)));
+            chatH.postDelayed(this, 600);
+        }
+    };
+    private static final String[] LANG_NAME = {"EN", "RU", "FA", "AR"};
+    private static final String[][] LAYOUTS = {
+            {"qwertyuiop", "asdfghjkl", "zxcvbnm"},
+            {"\u0439\u0446\u0443\u043a\u0435\u043d\u0433\u0448\u0449\u0437\u0445", "\u0444\u044b\u0432\u0430\u043f\u0440\u043e\u043b\u0434\u0436\u044d", "\u044f\u0447\u0441\u043c\u0438\u0442\u044c\u0431\u044e"},
+            {"\u0636\u0635\u062b\u0642\u0641\u063a\u0639\u0647\u062e\u062d\u062c", "\u0634\u0633\u06cc\u0628\u0644\u0627\u062a\u0646\u0645\u06a9", "\u0638\u0637\u0632\u0631\u0630\u062f\u067e\u0648"},
+            {"\u0636\u0635\u062b\u0642\u0641\u063a\u0639\u0647\u062e\u062d\u062c", "\u0634\u0633\u064a\u0628\u0644\u0627\u062a\u0646\u0645\u0643", "\u0626\u0621\u0624\u0631\u0649\u0629\u0648\u0632\u0638"}};
+
+    private java.util.List<String> lastLines(int n) {
+        String[] all = game.chatLines();
+        java.util.ArrayList<String> r = new java.util.ArrayList<>();
+        for (int i = Math.max(0, all.length - n); i < all.length; i++) r.add(all[i]);
+        return r;
+    }
+
+    private void closeChat() {
+        if (chatPanel == null) return;
+        root.removeView(chatPanel);
+        chatPanel = null;
+        chatH.removeCallbacks(chatTick);
+    }
+
+    private void refreshChatInput() {
+        chatInput.setText(chatText.length() == 0 ? "..." : chatText.toString());
+        chatInput.setTextColor(chatText.length() == 0 ? 0x88ffffff : Color.WHITE);
+    }
+
+    private Button key(String label, final Runnable act, int fill, int stroke) {
+        Button b = new Button(this);
+        b.setAllCaps(false);
+        b.setText(label);
+        b.setTextSize(13);
+        b.setTextColor(Color.WHITE);
+        b.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+        b.setPadding(0, 0, 0, 0);
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(fill);
+        bg.setStroke(dp(1), stroke);
+        b.setBackground(bg);
+        b.setOnClickListener(v -> act.run());
+        return b;
+    }
+
+    private void addRow(LinearLayout parent, java.util.List<Button> keys, java.util.List<Float> weights) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
+        for (int i = 0; i < keys.size(); i++) {
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, weights.get(i));
+            lp.setMargins(dp(2), dp(2), dp(2), dp(2));
+            row.addView(keys.get(i), lp);
+        }
+        parent.addView(row, new LinearLayout.LayoutParams(-1, dp(32)));
+    }
+
+    private void buildChatKeys() {
+        chatKeys.removeAllViews();
+        final int kf = 0x99401010, ks = 0xCCB22A2A;
+        java.util.ArrayList<Button> ks0 = new java.util.ArrayList<>();
+        java.util.ArrayList<Float> w0 = new java.util.ArrayList<>();
+        for (char c : "1234567890".toCharArray()) {
+            final String s = String.valueOf(c);
+            ks0.add(key(s, () -> typeChar(s), kf, ks));
+            w0.add(1f);
+        }
+        addRow(chatKeys, ks0, w0);
+        String[] rows = LAYOUTS[chatLang];
+        for (int r = 0; r < rows.length; r++) {
+            java.util.ArrayList<Button> kk = new java.util.ArrayList<>();
+            java.util.ArrayList<Float> ww = new java.util.ArrayList<>();
+            if (r == 2) {
+                kk.add(key(chatCaps ? "SHIFT*" : "SHIFT", () -> {
+                    chatCaps = !chatCaps;
+                    buildChatKeys();
+                }, chatCaps ? 0xCC8a1a1a : 0x99202020, 0xCC555555));
+                ww.add(1.6f);
+            }
+            for (int i = 0; i < rows[r].length(); i++) {
+                String ch = rows[r].substring(i, i + 1);
+                final String shown = chatCaps ? ch.toUpperCase() : ch;
+                kk.add(key(shown, () -> typeChar(shown), kf, ks));
+                ww.add(1f);
+            }
+            if (r == 2) {
+                kk.add(key("DEL", () -> {
+                    if (chatText.length() > 0) chatText.deleteCharAt(chatText.length() - 1);
+                    refreshChatInput();
+                }, 0x99202020, 0xCC555555));
+                ww.add(1.6f);
+            }
+            addRow(chatKeys, kk, ww);
+        }
+        java.util.ArrayList<Button> kb = new java.util.ArrayList<>();
+        java.util.ArrayList<Float> wb = new java.util.ArrayList<>();
+        kb.add(key(LANG_NAME[chatLang], () -> {
+            chatLang = (chatLang + 1) % LAYOUTS.length;
+            buildChatKeys();
+        }, 0x99202020, 0xCC555555));
+        wb.add(1.3f);
+        for (String s : new String[]{".", ",", "!", "?"}) {
+            final String t = s;
+            kb.add(key(t, () -> typeChar(t), kf, ks));
+            wb.add(.9f);
+        }
+        kb.add(key("SPACE", () -> typeChar(" "), kf, ks));
+        wb.add(3.4f);
+        kb.add(key("SEND", () -> {
+            final String s = chatText.toString().trim();
+            if (!s.isEmpty()) onGl(() -> game.sendChat(s));
+            chatText.setLength(0);
+            refreshChatInput();
+        }, 0xCCB22A2A, 0xFFff5a4a));
+        wb.add(1.6f);
+        kb.add(key("X", this::closeChat, 0x99202020, 0xCC555555));
+        wb.add(.9f);
+        addRow(chatKeys, kb, wb);
+    }
+
+    private void typeChar(String s) {
+        if (chatText.length() >= 80) return;
+        chatText.append(s);
+        refreshChatInput();
+    }
+
     private void openChat() {
+        if (chatPanel != null) return;
+        chatText.setLength(0);
+        chatCaps = false;
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(18), dp(8), dp(18), 0);
-        TextView log = text(android.text.TextUtils.join("\n", game.chatLines()), 12, 0xFFe0e0e0, false);
-        log.setTypeface(Typeface.MONOSPACE);
-        ScrollView sv = new ScrollView(this);
-        sv.addView(log);
-        box.addView(sv, new LinearLayout.LayoutParams(-1, dp(110)));
-        final EditText in = field("...");
-        in.setFilters(new InputFilter[]{new InputFilter.LengthFilter(80)});
-        box.addView(in);
-        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setView(box)
-                .setPositiveButton("Send", (dd, ww) -> {
-                    final String s = in.getText().toString().trim();
-                    if (!s.isEmpty()) onGl(() -> game.sendChat(s));
-                })
-                .setNegativeButton(L.t("s_back"), null)
-                .show();
+        box.setPadding(dp(8), dp(6), dp(8), dp(6));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xB30b0b0b);
+        bg.setStroke(dp(2), 0xCCB22A2A);
+        box.setBackground(bg);
+        chatLog = text("", 11, 0xFFe0e0e0, true);
+        chatLog.setLines(5);
+        chatLog.setGravity(Gravity.BOTTOM);
+        box.addView(chatLog, new LinearLayout.LayoutParams(-1, -2));
+        chatInput = text("...", 14, Color.WHITE, true);
+        chatInput.setGravity(Gravity.CENTER_VERTICAL);
+        chatInput.setPadding(dp(10), 0, dp(10), 0);
+        chatInput.setSingleLine(true);
+        chatInput.setEllipsize(android.text.TextUtils.TruncateAt.START);
+        GradientDrawable ib = new GradientDrawable();
+        ib.setColor(0x99120808);
+        ib.setStroke(dp(2), 0xCC5A0F10);
+        chatInput.setBackground(ib);
+        LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(-1, dp(32));
+        ip.topMargin = dp(4);
+        box.addView(chatInput, ip);
+        chatKeys = new LinearLayout(this);
+        chatKeys.setOrientation(LinearLayout.VERTICAL);
+        box.addView(chatKeys, new LinearLayout.LayoutParams(-1, -2));
+        buildChatKeys();
+        refreshChatInput();
+        chatPanel = box;
+        FrameLayout.LayoutParams fp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+        int sw = getResources().getDisplayMetrics().widthPixels;
+        fp.width = Math.min(sw, dp(560));
+        fp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        root.addView(chatPanel, fp);
+        chatH.post(chatTick);
     }
 
     private void openShop() {
@@ -107,7 +269,7 @@ public class MainActivity extends Activity implements Game.Ui {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(14), dp(20), dp(14));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xFF0b0b0b);
+        bg.setColor(0xCC0b0b0b);
         bg.setStroke(dp(2), 0xFFB22A2A);
         box.setBackground(bg);
         box.addView(text(L.t("h_shop"), 22, 0xFFcc2222, true));
@@ -1225,6 +1387,10 @@ public class MainActivity extends Activity implements Game.Ui {
 
     @Override
     public void onBackPressed() {
+        if (chatPanel != null) {
+            closeChat();
+            return;
+        }
         if (editBar.getVisibility() == View.VISIBLE || over.getVisibility() == View.VISIBLE) return;
         if (worldsView.getVisibility() == View.VISIBLE) {
             worldsView.setVisibility(View.GONE);
