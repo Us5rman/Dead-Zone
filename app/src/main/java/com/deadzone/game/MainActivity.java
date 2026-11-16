@@ -460,6 +460,7 @@ public class MainActivity extends Activity implements Game.Ui {
         over = buildOver();
         editBar = buildEditBar();
         root.addView(menu, new FrameLayout.LayoutParams(-1, -1));
+        menu.setVisibility(View.VISIBLE);
         root.addView(worldsView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(multiView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(settingsView, new FrameLayout.LayoutParams(-1, -1));
@@ -803,6 +804,7 @@ public class MainActivity extends Activity implements Game.Ui {
             public void setVisibility(int v) {
                 super.setVisibility(v);
                 game.menuUp = v == View.VISIBLE;
+                if (overlay != null) overlay.setVisibility(v == View.VISIBLE ? View.INVISIBLE : View.VISIBLE);
             }
         };
         wrap.setBackgroundColor(0x00000000);

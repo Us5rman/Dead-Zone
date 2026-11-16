@@ -27,6 +27,8 @@ final class World {
         boolean always = true;
     }
 
+    /** ladders: x, z, outward normal x, outward normal z, top height */
+    final ArrayList<double[]> ladders = new ArrayList<>();
     final ArrayList<double[]> obs = new ArrayList<>();   // x, z, w, d, top
     final ArrayList<double[]> glass = new ArrayList<>();
     final ArrayList<double[]> walls = new ArrayList<>();
@@ -520,9 +522,23 @@ final class World {
         return new double[]{x, z, h ? 0 : 1};
     }
 
+    /** the ladder whose climbing zone contains this spot, or null */
+    double[] ladderAt(double px, double pz, double feet) {
+        for (double[] l : ladders) {
+            double along = (px - l[0]) * -l[3] + (pz - l[1]) * l[2];
+            double out = (px - l[0]) * l[2] + (pz - l[1]) * l[3];
+            if (Math.abs(along) < .6 && out > .1 && out < 1.4 && feet < l[4] + .05) return l;
+        }
+        return null;
+    }
+
     private void tower(double x, double z) {
         box(x, z, 4.4, 4.4, 6, mWood);
-        for (int i = 0; i < 10; i++) box(x + 2.7 + (9 - i), z, 1, 2.2, .55 * (i + 1), mConc);
+        // ladder on the east wall instead of stairs
+        double lx = x + 2.2;
+        for (int sgn = -1; sgn <= 1; sgn += 2) mb(.07, 6.3, .07, lx + .06, 3.15, z + sgn * .3, mWood);
+        for (int i = 0; i < 17; i++) mb(.05, .05, .66, lx + .06, .3 + i * .35, z, mWood);
+        ladders.add(new double[]{lx, z, 1, 0, 6});
         for (int a = -1; a <= 1; a += 2) for (int b = -1; b <= 1; b += 2) box(x + a * 2.1, z + b * 2.1, .3, .3, 9.5, mWood);
         mb(5, .25, 5, x, 9.6, z, mWood);
         mesh(Prim.sphere(.22, 5, 4), Mat.basic(0xff3030), x, 9.9, z);

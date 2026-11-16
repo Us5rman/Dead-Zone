@@ -320,7 +320,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     static final double SLIDE_TIME = .85;
     double jy, vy, hvx, hvz, dvx, dvz, slideT, slideV0, crouchOff, dvPitch, camRoll, crawlPh, fovCur = 70;
     double wDive, wSlide, wCrawl, wRun;
-    boolean grounded = true, diving, sprint, crawling, airFast;
+    boolean grounded = true, diving, sprint, crawling, airFast, onLadder;
     double vaultT, vaultTop;
     double[] vaultObs;
     private int frames;
@@ -1595,7 +1595,29 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         cz = pp[1];
 
         double gnd = groundAt(cx, cz, .3, jy);
-        if (vaultT > 0) {
+        double[] lad = (pDead || vaultT > 0 || diving || slideT > 0) ? null : world.ladderAt(cx, cz, jy);
+        if (lad != null && !onLadder && fz > .3 && sn * lad[2] + cs * lad[3] > .35) onLadder = true;
+        if (lad == null || pDead) onLadder = false;
+        if (onLadder) {
+            double dirv = fz > .1 ? 1 : fz < -.1 ? -1 : 0;
+            jy += dirv * 3.0 * dt;
+            vy = 0;
+            hvx = hvz = 0;
+            grounded = false;
+            cx += (lad[0] + lad[2] * .6 - cx) * Math.min(1, dt * 10) * Math.abs(lad[2]);
+            cz += (lad[1] + lad[3] * .6 - cz) * Math.min(1, dt * 10) * Math.abs(lad[3]);
+            if (jy >= lad[4]) {
+                jy = lad[4];
+                onLadder = false;
+                cx -= lad[2] * 1.1;
+                cz -= lad[3] * 1.1;
+                grounded = true;
+            } else if (jy <= gnd) {
+                jy = gnd;
+                onLadder = false;
+                grounded = true;
+            }
+        } else if (vaultT > 0) {
             jy += (Math.max(vaultTop, gnd) - jy) * Math.min(1, dt * 16);
             vy = 0;
             grounded = true;
@@ -2097,6 +2119,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         wDive = wSlide = wCrawl = wRun = 0;
         fovCur = 70;
         grounded = true;
+        onLadder = false;
         diving = crawling = airFast = false;
         sprint = false;
     }

@@ -91,7 +91,6 @@ final class Sky {
               vec3 col = mix(uHor, zen, pow(h, 0.45));
               float md = dot(d, uBH);
               float mp = max(md, 0.0);
-              col += vec3(0.30, 0.16, 0.07) * (pow(mp, 5.0) * 0.25 + pow(mp, 24.0) * 0.35) * uSize * 0.6;
               col += vec3(0.05, 0.07, 0.12) * uFlash * (0.4 + h);
 
               vec2 g = d.xz / (max(d.y, 0.0) + 0.35) * 70.0;
@@ -108,7 +107,7 @@ final class Sky {
                 vec3 bb = cross(uBH, bt);
                 vec2 uv = vec2(dot(d, bt), dot(d, bb)) / rs;
                 col *= smoothstep(0.97, 1.0, length(uv));
-                col += gargantua(uv, uTime, 1.0);
+                col += 1.0 - exp(-gargantua(uv, uTime, 1.0) * 1.4);
               }
 
               if (d.y > 0.015) {
@@ -119,7 +118,7 @@ final class Sky {
                 if (cd > 0.002) {
                   float cl = smoothstep(uCover, uCover + 0.24, fbm2(p + uBH.xz * 0.05));
                   float shade = exp(-cl * 1.8);
-                  float rim = pow(mp, 10.0) * (0.6 + 0.4 * uSize);
+                  float rim = 0.0;
                   vec3 lc = vec3(0.50, 0.34, 0.22) * (0.5 + 0.35 * uSize);
                   vec3 cc = vec3(0.05, 0.065, 0.095) * (0.5 + 0.5 * shade);
                   cc += lc * shade * (0.12 + 0.9 * rim) * (0.4 + 0.6 * (1.0 - cd));
@@ -147,45 +146,50 @@ final class Sky {
               return v * 1.0667;
             }
 
+            vec3 heatCol(float h) {
+              vec3 c = mix(vec3(0.40, 0.08, 0.03), vec3(1.0, 0.42, 0.10), smoothstep(0.0, 0.45, h));
+              c = mix(c, vec3(1.0, 0.80, 0.42), smoothstep(0.40, 0.78, h));
+              return mix(c, vec3(1.0, 0.97, 0.90), smoothstep(0.75, 1.0, h));
+            }
+
             vec3 gargantua(vec2 uv, float t, float boost) {
-              float ca = 0.9848;
-              float sa = -0.1736;
+              float ca = 0.9394;
+              float sa = 0.3429;
               float x = uv.x * ca - uv.y * sa;
               float y = uv.x * sa + uv.y * ca;
               float r = length(vec2(x, y));
               float rn = max(r, 0.001);
               float ax = abs(x);
-              float dop = 0.42 + 0.9 * smoothstep(-2.6, 2.6, x);
               float ang = atan(y, x + 0.00001);
-              float orbR = 1.0 / (r * sqrt(r) + 0.6);
+              float orbR = 1.0 / (r * sqrt(r) + 0.5);
 
-              float up = smoothstep(-0.2, 0.85, y / rn);
-              float dn = smoothstep(0.4, 0.98, -y / rn);
-              float sw = hfbm(vec2(ang * 2.4 - t * 0.35 * orbR, r * 7.0));
-              float w1 = (r - 1.36) / 0.28;
-              float w2 = (r - 1.95) / 0.62;
-              float w3 = (r - 1.16) / 0.09;
-              float arcs = exp(-w1 * w1) * up * 1.9 + exp(-w2 * w2) * up * 0.55 + exp(-w3 * w3) * dn;
-              arcs *= (0.4 + 1.15 * sw) * dop;
+              float up = smoothstep(-0.45, 0.55, y / rn);
+              float dn = smoothstep(-0.45, 0.55, -y / rn) * 0.6;
+              float st = hfbm(vec2(ang * 1.2 - t * 0.25 * orbR, r * 26.0));
+              float lines = 0.35 + 1.3 * st;
+              float a1 = (r - 1.26) / 0.20;
+              float a2 = (r - 1.62) / 0.42;
+              float a3 = (r - 2.15) / 0.55;
+              float ringI = exp(-a1 * a1) * 1.9 + exp(-a2 * a2) * 0.6 + exp(-a3 * a3) * 0.18;
+              float ringH = exp(-(r - 1.0) * 0.75);
+              vec3 col = heatCol(ringH) * ringI * (up + dn) * lines;
 
-              float th = 0.042 + 0.03 * ax;
-              float across = exp(-(y / th) * (y / th));
-              float prof = smoothstep(1.0, 1.4, ax) * smoothstep(6.2, 2.2, ax);
-              float orb = t * 0.5 * orbR * (x < 0.0 ? -1.0 : 1.0);
-              float sk = 0.4 + 1.1 * hfbm(vec2(x * 0.85 - orb, y * 13.0));
-              float band = across * prof * sk * dop * 2.8;
+              float rg = (r - 1.012) / 0.012;
+              col += vec3(1.0, 0.96, 0.86) * exp(-rg * rg) * 2.2;
+              col += vec3(0.8, 0.38, 0.12) * exp(-max(r - 1.0, 0.0) * 1.1) * 0.22 * smoothstep(5.0, 1.5, r);
+              col *= smoothstep(0.985, 1.0, r);
 
-              vec3 hot = vec3(1.0, 0.93, 0.8);
-              vec3 warm = vec3(0.95, 0.55, 0.22);
-              vec3 cool = vec3(0.55, 0.26, 0.10);
-              vec3 dcb = mix(hot, mix(warm, cool, smoothstep(2.5, 6.0, ax)), smoothstep(1.1, 3.0, ax));
-              vec3 dca = mix(hot, warm, smoothstep(1.15, 2.6, r));
-
-              vec3 col = dcb * band + dca * arcs;
-              float rg = (r - 1.045) / 0.02;
-              col += vec3(1.0, 0.95, 0.85) * exp(-rg * rg) * (1.2 + 0.6 * dop);
-              col += vec3(0.7, 0.4, 0.18) * exp(-max(r - 1.0, 0.0) * 0.6) * 0.10;
-              return col * smoothstep(0.99, 1.05, r) * boost;
+              float yb = y + 0.09;
+              float th = 0.03 + 0.11 * clamp(1.0 - ax / 6.5, 0.0, 1.0);
+              float core = exp(-(yb / th) * (yb / th));
+              float halo = exp(-(yb / (th * 3.5)) * (yb / (th * 3.5)));
+              float taper = smoothstep(7.0, 3.0, ax);
+              float orb = t * 0.45 * orbR * (x < 0.0 ? -1.0 : 1.0);
+              float sk = 0.55 + 0.9 * hfbm(vec2(x * 0.8 - orb, yb * 11.0));
+              float bh = exp(-ax * 0.32);
+              col += heatCol(0.25 + 0.75 * bh) * (core * 3.2 * sk + halo * 0.9 * sk * smoothstep(0.95, 1.4, r)) * taper;
+              col += vec3(1.0, 0.96, 0.88) * core * 1.2 * exp(-ax * 0.7) * taper;
+              return col * boost;
             }
             """;
 
