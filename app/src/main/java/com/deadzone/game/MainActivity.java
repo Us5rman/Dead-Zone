@@ -100,35 +100,47 @@ public class MainActivity extends Activity implements Game.Ui {
     }
 
     private void openShop() {
-        if (game.hud.breakT <= 0) return;
-        final int kills = game.myKills;
+        final Dialog dlg = new Dialog(this);
+        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(18), dp(8), dp(18), 0);
-        box.addView(text("KILLS " + kills, 14, 0xFFffcc33, true));
-        final AlertDialog[] dlg = new AlertDialog[1];
+        box.setPadding(dp(20), dp(14), dp(20), dp(14));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFF0b0b0b);
+        bg.setStroke(dp(2), 0xFFB22A2A);
+        box.setBackground(bg);
+        box.addView(text(L.t("h_shop"), 22, 0xFFcc2222, true));
         for (int i = 0; i < Weapons.NAME.length; i++) {
             final int wi = i;
-            boolean unlocked = kills >= Weapons.UNLOCK[i];
             boolean eq = game.weapon == i;
-            Button b = button(Weapons.NAME[i] + "  " + (unlocked ? (eq ? "EQUIPPED" : "EQUIP") : "NEED " + Weapons.UNLOCK[i] + " KILLS")
-                    + "  MOBILITY " + Math.round(Weapons.MOB[i] * 100) + "%", 12);
-            setBtn(b, unlocked && !eq);
+            Button b = button(Weapons.NAME[i] + (eq ? "  [EQUIPPED]" : "") + "   MOBILITY " + Math.round(Weapons.MOB[i] * 100) + "%", 14);
+            if (eq) style(b, 0xFF8a1a1a, 0xFFff5a4a);
             b.setOnClickListener(v -> {
                 onGl(() -> game.equip(wi));
-                dlg[0].dismiss();
+                dlg.dismiss();
             });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.topMargin = dp(6);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(40));
+            lp.topMargin = dp(8);
             box.addView(b, lp);
         }
+        Button back = button(L.t("s_back"), 14);
+        style(back, 0xFF1a1a1a, 0xFF555555);
+        back.setOnClickListener(v -> dlg.dismiss());
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, dp(40));
+        bp.topMargin = dp(14);
+        box.addView(back, bp);
         ScrollView sv = new ScrollView(this);
         sv.addView(box);
-        dlg[0] = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle(L.t("h_shop"))
-                .setView(sv)
-                .setNegativeButton(L.t("s_back"), null)
-                .show();
+        dlg.setContentView(sv);
+        Window w = dlg.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            w.setDimAmount(.8f);
+            int sw = getResources().getDisplayMetrics().widthPixels;
+            w.setLayout(Math.min(dp(440), sw * 8 / 10), WindowManager.LayoutParams.WRAP_CONTENT);
+            w.getDecorView().setSystemUiVisibility(getWindow().getDecorView().getSystemUiVisibility());
+        }
+        dlg.show();
     }
 
     private MediaPlayer bhP;

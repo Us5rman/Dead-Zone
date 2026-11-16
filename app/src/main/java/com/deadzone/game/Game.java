@@ -150,7 +150,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     }
 
     void equip(int w) {
-        if (w < 0 || w >= Weapons.NAME.length || myKills < Weapons.UNLOCK[w]) return;
+        if (w < 0 || w >= Weapons.NAME.length) return;
         weapon = w;
         mag = Weapons.MAG[w];
         res = Weapons.MAG[w] * 5;

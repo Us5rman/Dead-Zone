@@ -297,12 +297,23 @@ final class Overlay extends View {
             int s = (int) Math.ceil(hud.breakT);
             p.setTextSize(15 * d);
             c.drawText(L.t("h_next") + " " + (s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60), w / 2f, 80 * d, p);
-            p.setColor(0xFF5a1010);
-            c.drawRect(w / 2f - 60 * d, 88 * d, w / 2f + 60 * d, 112 * d, p);
-            p.setColor(0xFFffffff);
-            p.setTextSize(13 * d);
-            c.drawText(L.t("h_shop"), w / 2f, 105 * d, p);
         }
+        // SHOP button, always available, same look as the menu buttons
+        float sl = w / 2f - 46 * d, sr = w / 2f + 46 * d, st = 8 * d, sb = 36 * d;
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0xFF5A0F10);
+        c.drawRect(sl, st, sr, sb, p);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(2 * d);
+        p.setColor(0xFFB22A2A);
+        c.drawRect(sl, st, sr, sb, p);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0xFFffffff);
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setTextSize(13 * d);
+        p.setFakeBoldText(true);
+        c.drawText(L.t("h_shop"), w / 2f, 27 * d, p);
+        p.setFakeBoldText(false);
         p.setTextAlign(Paint.Align.LEFT);
         p.setTextSize(11 * d);
         String[] ch = hud.chat;
@@ -421,7 +432,7 @@ final class Overlay extends View {
             invalidate();
             return;
         }
-        if (hud.breakT > 0 && Math.abs(x - w / 2f) <= 60 * d && Math.abs(y - 100 * d) <= 14 * d) {
+        if (Math.abs(x - w / 2f) <= 50 * d && y >= 4 * d && y <= 40 * d) {
             if (onShop != null) onShop.run();
             return;
         }
