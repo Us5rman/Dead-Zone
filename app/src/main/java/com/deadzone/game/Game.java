@@ -154,6 +154,83 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         return "Us5rman".equalsIgnoreCase(myName == null ? "" : myName.trim());
     }
 
+    /* ---- admin perks (only for the name Us5rman) ---- */
+    volatile boolean god, infAmmo, speedUp, oneShot, freezeZ;
+    volatile int rainForce = -1;
+
+    void adminCmd(int cmd) {
+        if (!admin()) return;
+        boolean host = role != CLIENT;
+        switch (cmd) {
+            case 0: // revive / full heal
+                pDead = false;
+                hp = 100;
+                hud.dead = false;
+                break;
+            case 1:
+                god = !god;
+                break;
+            case 2:
+                infAmmo = !infAmmo;
+                break;
+            case 3:
+                mag = Weapons.MAG[weapon];
+                res = Weapons.MAG[weapon] * 5;
+                rl = 0;
+                break;
+            case 4:
+                speedUp = !speedUp;
+                break;
+            case 5:
+                oneShot = !oneShot;
+                break;
+            case 6: // lightning
+                if (host && lightClock < 0) hostStrike();
+                break;
+            case 7: // storm / clear / auto
+                rainForce = rainForce == -1 ? 1 : rainForce == 1 ? 0 : -1;
+                break;
+            case 8: // kill all zombies
+                if (host) {
+                    for (Zombie z : zs) {
+                        if (z.dead) continue;
+                        z.dead = true;
+                        z.dt = 0;
+                        kills++;
+                        stat("host").kills++;
+                    }
+                }
+                break;
+            case 9: // next wave now
+                if (host) {
+                    for (Zombie z : zs) {
+                        if (!z.dead) {
+                            z.dead = true;
+                            z.dt = 0;
+                        }
+                    }
+                    spawnLeft = 0;
+                    breakT = 0;
+                    breakSent = false;
+                    nextWave();
+                }
+                break;
+            case 10: // spawn 5 zombies
+                if (host) for (int i = 0; i < 5; i++) spawn();
+                break;
+            case 11:
+                freezeZ = !freezeZ;
+                break;
+            case 12: // +100 kills
+                kills += 100;
+                myKills += 100;
+                stat("host").kills += 100;
+                break;
+            default:
+                break;
+        }
+    }
+
     /** solo: everything is free. online: kills unlock guns and the shop opens between waves, unless admin */
     boolean canUse(int w) {
         return role == SOLO || admin() || myKills >= Weapons.UNLOCK[w];
@@ -784,7 +861,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
     private void weather(double dt) {
         weatherT += dt;
-        double target = rainAt(cx, cz, weatherT);
+        double target = rainForce >= 0 && admin() ? rainForce : rainAt(cx, cz, weatherT);
         double k = Math.min(1, dt * .7);
         double r = Gfx.rain + (target - Gfx.rain) * k;
         Gfx.rain = (float) r;
@@ -1157,7 +1234,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         }
         double w = world.rayWalls(ox, oy, oz, dx, dy, dz);
         if (bz == null || (w >= 0 && w < bt)) return;
-        bz.hp -= (head ? 3 : 1) * mul;
+        bz.hp -= (head ? 3 : 1) * mul * (oneShot && by.equals("host") && admin() ? 1000 : 1);
         double px = ox + dx * bt, py = oy + dy * bt, pz = oz + dz * bt;
         spawnBlood(px, py, pz);
         JSONArray p = new JSONArray();
@@ -1467,7 +1544,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             fz /= L;
         }
         boolean fast = sprint || (set.autoRun && stick > .95);
-        double sp = (crawling ? (fast ? 3.0 : 1.6) : (fast ? 6.5 : 4)) * Weapons.MOB[weapon];
+        double sp = (crawling ? (fast ? 3.0 : 1.6) : (fast ? 6.5 : 4)) * Weapons.MOB[weapon] * (speedUp && admin() ? 1.8 : 1);
         if (!grounded && airFast) sp *= 1.08;
         boolean moving = Math.hypot(fx, fz) > .1 && free && grounded;
         if (free) {
@@ -1717,6 +1794,14 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         hud.breakT = breakT;
         hud.weapon = Weapons.NAME[weapon];
         hud.shopOk = shopOpen();
+        hud.admin = admin();
+        if (admin()) {
+            if (infAmmo) {
+                mag = Weapons.MAG[weapon];
+                if (res < 30) res = Weapons.MAG[weapon] * 5;
+                rl = 0;
+            }
+        }
 
         updateZombies(dt, isHost);
         updateRemotes(dt);
@@ -1769,6 +1854,10 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         }
         hud.mp = pp2;
 
+        if (god && admin()) {
+            hp = 100;
+            pDead = false;
+        }
         if (hp <= 0 && !pDead) {
             if (role == SOLO) {
                 showOver();
@@ -1844,6 +1933,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     }
 
     private void updateZombies(double dt, boolean isHost) {
+        if (freezeZ && isHost && admin()) return;
         List<Tgt> targets = isHost ? allPl() : null;
         if (isHost) {
             if (nav == null) nav = new Nav(world.obs, .55);

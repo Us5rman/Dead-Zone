@@ -261,7 +261,104 @@ public class MainActivity extends Activity implements Game.Ui {
         chatH.post(chatTick);
     }
 
+    /* ---- admin panel (name Us5rman only) ---- */
+    private Dialog adminDlg;
+
+    private Button adminBtn(final String label, final boolean on, final Runnable act) {
+        final Button b = button(label, 12);
+        if (on) style(b, 0xFF8a1a1a, 0xFFff5a4a);
+        b.setOnClickListener(v -> {
+            act.run();
+            if (adminDlg != null) adminDlg.dismiss();
+            openAdmin();
+        });
+        return b;
+    }
+
+    private void adminRow(LinearLayout box, Button a, Button b) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams l1 = new LinearLayout.LayoutParams(0, dp(38), 1f);
+        l1.setMargins(0, dp(4), dp(4), 0);
+        row.addView(a, l1);
+        if (b != null) {
+            LinearLayout.LayoutParams l2 = new LinearLayout.LayoutParams(0, dp(38), 1f);
+            l2.setMargins(dp(4), dp(4), 0, 0);
+            row.addView(b, l2);
+        }
+        box.addView(row, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private Runnable cmd(final int c) {
+        return () -> onGl(() -> game.adminCmd(c));
+    }
+
+    private String onOff(String n, boolean v) {
+        return n + ": " + (v ? "ON" : "OFF");
+    }
+
+    private void openAdmin() {
+        if (!game.admin()) return;
+        if (adminDlg != null && adminDlg.isShowing()) adminDlg.dismiss();
+        final Dialog dlg = new Dialog(this);
+        adminDlg = dlg;
+        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(12), dp(16), dp(12));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xCC0b0b0b);
+        bg.setStroke(dp(2), 0xFFB22A2A);
+        box.setBackground(bg);
+        box.addView(text("ADMIN", 22, 0xFFcc2222, true));
+        boolean host = game.role != Game.CLIENT;
+
+        box.addView(text("PLAYER", 11, 0xFF999999, true));
+        adminRow(box, adminBtn("REVIVE / HEAL", false, cmd(0)), adminBtn(onOff("GOD MODE", game.god), game.god, cmd(1)));
+        adminRow(box, adminBtn(onOff("INFINITE AMMO", game.infAmmo), game.infAmmo, cmd(2)), adminBtn("REFILL AMMO", false, cmd(3)));
+        adminRow(box, adminBtn(onOff("SPEED x1.8", game.speedUp), game.speedUp, cmd(4)), adminBtn(onOff("ONE SHOT KILL", game.oneShot), game.oneShot, cmd(5)));
+        adminRow(box, adminBtn("+100 KILLS", false, cmd(12)), null);
+
+        box.addView(text("WEAPONS", 11, 0xFF999999, true));
+        for (int i = 0; i < Weapons.NAME.length; i += 2) {
+            final int a = i, b2 = i + 1;
+            adminRow(box,
+                    adminBtn(Weapons.NAME[a] + (game.weapon == a ? " *" : ""), game.weapon == a, () -> onGl(() -> game.equip(a))),
+                    adminBtn(Weapons.NAME[b2] + (game.weapon == b2 ? " *" : ""), game.weapon == b2, () -> onGl(() -> game.equip(b2))));
+        }
+
+        box.addView(text(host ? "WORLD" : "WORLD (HOST ONLY)", 11, 0xFF999999, true));
+        adminRow(box, adminBtn("SUMMON LIGHTNING", false, cmd(6)),
+                adminBtn("RAIN: " + (game.rainForce == -1 ? "AUTO" : game.rainForce == 1 ? "STORM" : "CLEAR"), game.rainForce != -1, cmd(7)));
+        adminRow(box, adminBtn("KILL ALL ZOMBIES", false, cmd(8)), adminBtn("NEXT WAVE NOW", false, cmd(9)));
+        adminRow(box, adminBtn("SPAWN 5 ZOMBIES", false, cmd(10)), adminBtn(onOff("FREEZE ZOMBIES", game.freezeZ), game.freezeZ, cmd(11)));
+
+        Button close = button(L.t("s_back"), 14);
+        style(close, 0xFF1a1a1a, 0xFF555555);
+        close.setOnClickListener(v -> dlg.dismiss());
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1, dp(40));
+        cp.topMargin = dp(10);
+        box.addView(close, cp);
+
+        ScrollView sv = new ScrollView(this);
+        sv.addView(box);
+        dlg.setContentView(sv);
+        Window w = dlg.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            w.setDimAmount(.15f);
+            int sw = getResources().getDisplayMetrics().widthPixels;
+            w.setLayout(Math.min(dp(520), sw * 8 / 10), WindowManager.LayoutParams.WRAP_CONTENT);
+            w.getDecorView().setSystemUiVisibility(getWindow().getDecorView().getSystemUiVisibility());
+        }
+        dlg.show();
+    }
+
     private void openShop() {
+        if (game.admin()) {
+            openAdmin();
+            return;
+        }
         if (!game.shopOpen()) return;
         final Dialog dlg = new Dialog(this);
         dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);

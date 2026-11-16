@@ -313,7 +313,7 @@ final class Overlay extends View {
         p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(13 * d);
         p.setFakeBoldText(true);
-        c.drawText(L.t("h_shop"), w / 2f, 27 * d, p);
+        c.drawText(hud.admin ? "ADMIN" : L.t("h_shop"), w / 2f, 27 * d, p);
         p.setFakeBoldText(false);
         if (!hud.shopOk) {
             p.setStyle(Paint.Style.FILL);
