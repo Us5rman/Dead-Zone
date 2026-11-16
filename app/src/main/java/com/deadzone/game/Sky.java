@@ -107,8 +107,7 @@ final class Sky {
                 vec3 bb = cross(uBH, bt);
                 vec2 uv = vec2(dot(d, bt), dot(d, bb)) / rs;
                 col *= smoothstep(0.97, 1.0, length(uv));
-                float lvl = 1.0 + smoothstep(1.1, 1.3, uSize) + smoothstep(1.8, 2.0, uSize) + smoothstep(2.5, 2.7, uSize) + smoothstep(3.4, 3.6, uSize);
-                col += 1.0 - exp(-gargantua(uv, uTime, lvl) * 1.4);
+                col += 1.0 - exp(-gargantua(uv, uTime, 1.0) * 1.4);
               }
 
               if (d.y > 0.015) {
@@ -153,83 +152,44 @@ final class Sky {
               return mix(c, vec3(1.0, 0.97, 0.90), smoothstep(0.75, 1.0, h));
             }
 
-            float hs(vec2 p) {
-              return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
-            }
+            vec3 gargantua(vec2 uv, float t, float boost) {
+              float ca = 0.9394;
+              float sa = 0.3429;
+              float x = uv.x * ca - uv.y * sa;
+              float y = uv.x * sa + uv.y * ca;
+              float r = length(vec2(x, y));
+              float rn = max(r, 0.001);
+              float ax = abs(x);
+              float ang = atan(y, x + 0.00001);
+              float orbR = 1.0 / (r * sqrt(r) + 0.5);
 
-            vec3 domeCol(vec2 p, float t) {
-              float rr = length(p) + 0.0001;
-              float ang = atan(p.y, p.x + 0.00001);
-              float topv = smoothstep(-0.2, 1.0, p.y / rr);
-              float re = rr / (1.0 + 0.35 * (1.0 - topv) * smoothstep(1.1, 1.7, rr));
-              float st = hfbm(vec2(ang * 0.9 - t * 0.05, re * 38.0));
-              float lines = 0.35 + 1.25 * st;
-              float a = (re - 1.12) / 0.16;
-              float b = (re - 1.36) / 0.24;
-              float c = (re - 1.60) / 0.09;
-              float I = (exp(-a * a) * 1.6 + exp(-b * b)) * lines * (0.5 + 0.8 * topv) + exp(-c * c) * lines * 0.7;
-              float h = clamp(1.15 - (re - 1.0) * 1.15, 0.0, 1.0) * (0.55 + 0.45 * topv);
-              vec3 col = heatCol(h);
-              col = mix(col, vec3(0.72, 0.74, 0.80), smoothstep(1.38, 1.56, re) * 0.8);
-              return col * I;
-            }
+              float up = smoothstep(-0.45, 0.55, y / rn);
+              float dn = smoothstep(-0.45, 0.55, -y / rn) * 0.6;
+              float st = hfbm(vec2(ang * 1.2 - t * 0.25 * orbR, r * 26.0));
+              float lines = 0.35 + 1.3 * st;
+              float a1 = (r - 1.26) / 0.20;
+              float a2 = (r - 1.62) / 0.42;
+              float a3 = (r - 2.15) / 0.55;
+              float ringI = exp(-a1 * a1) * 1.9 + exp(-a2 * a2) * 0.6 + exp(-a3 * a3) * 0.18;
+              float ringH = exp(-(r - 1.0) * 0.75);
+              vec3 col = heatCol(ringH) * ringI * (up + dn) * lines;
 
-            // lvl 1 central engine, 2 lensing, 3 line-emitting gas, 4 dust environment, 5 TON 618
-            vec3 gargantua(vec2 uv, float t, float lvl) {
-              float wL = smoothstep(1.0, 2.0, lvl);
-              float wG = smoothstep(2.0, 3.0, lvl);
-              float wD = smoothstep(3.0, 4.0, lvl);
-              float wT = smoothstep(4.0, 5.0, lvl);
-              float yb = -0.06;
-              float r = length(uv);
-              float ax = abs(uv.x);
-              vec3 col = vec3(0.0);
+              float rg = (r - 1.012) / 0.012;
+              col += vec3(1.0, 0.96, 0.86) * exp(-rg * rg) * 2.2;
+              col += vec3(0.8, 0.38, 0.12) * exp(-max(r - 1.0, 0.0) * 1.1) * 0.22 * smoothstep(5.0, 1.5, r);
+              col *= smoothstep(0.985, 1.0, r);
 
-              col += vec3(0.20, 0.07, 0.05) * (0.35 + 0.65 * smoothstep(-1.0, 1.0, uv.y))
-                   * (1.0 - smoothstep(0.97, 1.0, r)) * smoothstep(yb - 0.1, yb + 0.1, uv.y);
-              float rg = (r - 1.0) / 0.006;
-              col += vec3(1.0, 0.95, 0.85) * exp(-rg * rg) * smoothstep(yb - 0.15, yb + 0.05, uv.y) * 1.6;
-
-              float gt = smoothstep(yb, yb + 0.5, uv.y);
-              float gb = smoothstep(yb - 0.35, yb - 0.9, uv.y);
-              col += domeCol(uv, t) * gt * (0.5 + 0.5 * wL);
-              col += domeCol(vec2(uv.x, 2.0 * yb - uv.y), t + 7.0) * gb * 0.5 * wL;
-
-              float d = uv.y - yb;
-              float th = (0.05 + 0.16 * smoothstep(0.3, 2.5, ax) * smoothstep(6.2, 3.0, ax)) * (1.0 + 0.3 * wT);
-              float orbR = 1.0 / (ax * sqrt(ax) + 0.8);
-              float orb = t * 0.4 * orbR * (uv.x / (abs(uv.x) + 0.3));
-              float cl = hfbm(vec2(uv.x * 1.2 - orb, uv.y * 5.0));
-              float cl2 = hfbm(vec2(uv.x * 3.2 - orb * 1.5 + 3.0, uv.y * 12.0));
-              float taper = smoothstep(6.2, 2.4, ax);
-              float cr = d / (0.35 * th);
-              float core = exp(-cr * cr) * 3.0 * (0.6 + 0.8 * cl);
-              float md = d / th;
-              float mid = exp(-md * md) * 1.3 * (0.5 + cl);
-              vec3 colb = heatCol(0.30 + 0.7 * exp(-ax * 0.30));
-              float up = smoothstep(-0.05, 0.15, d);
-              float wd = max(d, 0.0) / (th * 2.0 + 0.05);
-              float wisp = exp(-wd * wd) * clamp((cl2 - 0.40) * 3.0, 0.0, 1.0) * 1.3 * up;
-              col += colb * (core + mid + wisp) * taper;
-              float hot = d / (0.18 * th);
-              col += vec3(1.0, 0.96, 0.88) * exp(-hot * hot) * 1.4 * exp(-ax * 0.5) * taper;
-
-              float dd = max(-d, 0.0);
-              float dth = th * 1.5 + 0.30;
-              float dq = dd / dth;
-              float dustI = exp(-dq * dq) * clamp((cl2 - 0.26) * 2.4, 0.0, 1.0) * smoothstep(0.0, 0.05, -d) * taper;
-              vec3 dcol = mix(vec3(0.95, 0.42, 0.14), vec3(0.45, 0.16, 0.07), clamp(dq, 0.0, 1.0));
-              col += dcol * dustI * (0.35 + 0.65 * wD);
-
-              vec2 e = vec2(uv.x / 3.4, (uv.y - yb) / 0.9);
-              float er = length(e);
-              float ea = atan(e.y, e.x + 0.00001);
-              vec2 gc = vec2(ea * 34.0 - t * 0.4 / (er * sqrt(er) + 0.3), er * 30.0);
-              float gdot = smoothstep(0.30, 0.0, length(fract(gc) - 0.5));
-              col += vec3(1.0, 0.85, 0.6) * step(0.93, hs(floor(gc))) * gdot
-                   * smoothstep(0.30, 0.55, er) * smoothstep(1.15, 0.8, er) * wG * 0.9;
-
-              return col * (1.0 + 0.25 * wT);
+              float yb = y + 0.09;
+              float th = 0.03 + 0.11 * clamp(1.0 - ax / 6.5, 0.0, 1.0);
+              float core = exp(-(yb / th) * (yb / th));
+              float halo = exp(-(yb / (th * 3.5)) * (yb / (th * 3.5)));
+              float taper = smoothstep(7.0, 3.0, ax);
+              float orb = t * 0.45 * orbR * (x < 0.0 ? -1.0 : 1.0);
+              float sk = 0.55 + 0.9 * hfbm(vec2(x * 0.8 - orb, yb * 11.0));
+              float bh = exp(-ax * 0.32);
+              col += heatCol(0.25 + 0.75 * bh) * (core * 3.2 * sk + halo * 0.9 * sk * smoothstep(0.95, 1.4, r)) * taper;
+              col += vec3(1.0, 0.96, 0.88) * core * 1.2 * exp(-ax * 0.7) * taper;
+              return col * boost;
             }
             """;
 
@@ -278,10 +238,10 @@ final class Sky {
               float st = smoothstep(0.30, 0.0, length(fract(g) - 0.5 - (n.gb - 0.5) * 0.6)) * step(0.955, n.r);
               st *= 0.55 + 0.45 * sin(uTime * 2.2 + n.b * 60.0);
               vec3 col = vec3(0.7, 0.8, 1.0) * st * 0.9;
-              col += vec3(0.012, 0.022, 0.028) + vec3(0.010, 0.020, 0.024) * fbm(fc * 0.004);
+              col += vec3(0.30, 0.16, 0.07) * (0.20 * exp(-r * 0.32) + 0.35 * exp(-r * 1.1)) * boost;
               col *= smoothstep(0.97, 1.0, r);
 
-              col += gargantua(uv, uTime, 5.0);
+              col += gargantua(uv, uTime, boost);
               return col;
             }
 
@@ -291,7 +251,7 @@ final class Sky {
                 gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
                 return;
               }
-              float boost = 1.0;
+              float boost = 1.0 + uTouch.z * 1.1 * exp(-length(uTouch.xy - uC) / (uR * 4.0));
               vec2 dd = fc - uC;
               vec3 col;
               if (dot(dd, dd) < 60.0 * uR * uR) {
@@ -302,6 +262,25 @@ final class Sky {
                 col = scene(fc, boost);
               }
 
+              if (uTouch.z > 0.003) {
+                vec2 tp = fc - uTouch.xy;
+                float td = length(tp);
+                float R = uRes.y * 0.07;
+                float ang = atan(tp.y, tp.x);
+                float fl = 0.6 + 0.8 * vn(vec2(ang * 2.2 + uTime * 1.3, uTime * 0.7));
+                float k = uTouch.z;
+                float rr = R * (0.35 + 0.65 * k);
+                float u1 = (td - rr) / (R * 0.035);
+                float u2 = (td - rr) / (R * 0.22);
+                float u3 = (td - rr * 1.3) / (R * 0.07);
+                float ring = exp(-u1 * u1);
+                float halo = exp(-u2 * u2);
+                float side = abs(tp.x) / max(td, 1.0);
+                float arc = exp(-u3 * u3) * smoothstep(0.2, 0.9, side);
+                vec3 yel = mix(vec3(1.0, 0.88, 0.55), vec3(0.95, 0.42, 0.12), smoothstep(0.0, 1.0, (td - rr) / (R * 0.5) + 0.3));
+                col *= mix(1.0, smoothstep(rr * 0.7, rr * 0.98, td), 0.85 * k);
+                col += (yel * (ring * 1.7 * fl + arc * 0.9 * fl) + vec3(0.9, 0.45, 0.12) * halo * 0.28) * k;
+              }
               col = 1.0 - exp(-col * 1.5);
               gl_FragColor = vec4(col, 1.0);
             }
@@ -323,7 +302,7 @@ final class Sky {
         touchAmt += (target - touchAmt) * (float) Math.min(1, dt * (menuDown ? 9 : 3.5));
         float bandTop = 0f, bandBot = h * MENU_LINE;
         float rad = Math.min(h * .17f, w * .075f);
-        float cx = w * .66f, cy = bandBot - rad * 1.15f;
+        float cx = w * .66f, cy = bandBot - rad * .3f;
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
         GLES20.glViewport(0, 0, w, h);
         GLES20.glUseProgram(holeProg);

@@ -927,7 +927,16 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         startGame(false);
     }
 
-    void startHost(long seed, String id, int fromWave) {
+    private boolean pendPub;
+    private String pendName = "";
+
+    void browse(Net.BrowseCb cb) {
+        net.browse(cb);
+    }
+
+    void startHost(long seed, String id, int fromWave, boolean pub, String wname) {
+        pendPub = pub;
+        pendName = wname;
         pendSeed = seed;
         pendId = id;
         pendWave = fromWave;
@@ -936,7 +945,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
     private void hostNow() {
         roomCode = newCode();
-        net.host(roomCode);
+        net.host(roomCode, pendPub, pendName, myName);
     }
 
     volatile String myName = "Player";
@@ -1062,10 +1071,10 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             boolean tier = (a < 1.2 && b >= 1.2) || (a < 1.9 && b >= 1.9) || (a < 2.6 && b >= 2.6) || (a < 3.5 && b >= 3.5);
             ui.sound(tier ? "bh_grow_big" : "bh_grow_small", tier ? 1f : .7f, 1f);
         }
-        if (a < 1.2 && b >= 1.2) ban("LEVEL 2  LENSING  -  RUNNERS");
-        else if (a < 1.9 && b >= 1.9) ban("LEVEL 3  LINE-EMITTING GAS  -  BRUTES");
-        else if (a < 2.6 && b >= 2.6) ban("LEVEL 4  DUST ENVIRONMENT  -  VOIDLINGS");
-        else if (a < 3.5 && b >= 3.5) ban("LEVEL 5  TON 618  -  TITANS");
+        if (a < 1.2 && b >= 1.2) ban("THE VOID GROWS  -  RUNNERS");
+        else if (a < 1.9 && b >= 1.9) ban("THE VOID GROWS  -  BRUTES");
+        else if (a < 2.6 && b >= 2.6) ban("THE VOID GROWS  -  VOIDLINGS");
+        else if (a < 3.5 && b >= 3.5) ban("THE VOID GROWS  -  TITANS");
         if (w == VOID_WAVE) ban("THE VOID AWAKENS");
         if (wave > 1) {
             if (pDead) {
