@@ -1,6 +1,7 @@
 package com.deadzone.game;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Intent;
 import android.net.Uri;
@@ -76,6 +77,60 @@ public class MainActivity extends Activity implements Game.Ui {
     private float d;
     private FrameLayout root;
     private SoundPool pool;
+    private void openChat() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(18), dp(8), dp(18), 0);
+        TextView log = text(android.text.TextUtils.join("\n", game.chatLines()), 12, 0xFFe0e0e0, false);
+        log.setTypeface(Typeface.MONOSPACE);
+        ScrollView sv = new ScrollView(this);
+        sv.addView(log);
+        box.addView(sv, new LinearLayout.LayoutParams(-1, dp(110)));
+        final EditText in = field("...");
+        in.setFilters(new InputFilter[]{new InputFilter.LengthFilter(80)});
+        box.addView(in);
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setView(box)
+                .setPositiveButton("Send", (dd, ww) -> {
+                    final String s = in.getText().toString().trim();
+                    if (!s.isEmpty()) onGl(() -> game.sendChat(s));
+                })
+                .setNegativeButton(L.t("s_back"), null)
+                .show();
+    }
+
+    private void openShop() {
+        if (game.hud.breakT <= 0) return;
+        final int kills = game.myKills;
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(18), dp(8), dp(18), 0);
+        box.addView(text("KILLS " + kills, 14, 0xFFffcc33, true));
+        final AlertDialog[] dlg = new AlertDialog[1];
+        for (int i = 0; i < Weapons.NAME.length; i++) {
+            final int wi = i;
+            boolean unlocked = kills >= Weapons.UNLOCK[i];
+            boolean eq = game.weapon == i;
+            Button b = button(Weapons.NAME[i] + "  " + (unlocked ? (eq ? "EQUIPPED" : "EQUIP") : "NEED " + Weapons.UNLOCK[i] + " KILLS")
+                    + "  MOBILITY " + Math.round(Weapons.MOB[i] * 100) + "%", 12);
+            setBtn(b, unlocked && !eq);
+            b.setOnClickListener(v -> {
+                onGl(() -> game.equip(wi));
+                dlg[0].dismiss();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.topMargin = dp(6);
+            box.addView(b, lp);
+        }
+        ScrollView sv = new ScrollView(this);
+        sv.addView(box);
+        dlg[0] = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle(L.t("h_shop"))
+                .setView(sv)
+                .setNegativeButton(L.t("s_back"), null)
+                .show();
+    }
+
     private MediaPlayer bhP;
     private boolean bhResume;
     private final java.util.HashMap<String, Integer> soundIds = new java.util.HashMap<>();
@@ -106,6 +161,8 @@ public class MainActivity extends Activity implements Game.Ui {
         applyGraphics();
 
         overlay = new Overlay(this, game, set);
+        overlay.onChat = this::openChat;
+        overlay.onShop = this::openShop;
         overlay.onPause = new Runnable() {
             @Override
             public void run() {
@@ -150,6 +207,8 @@ public class MainActivity extends Activity implements Game.Ui {
             java.util.ArrayList<String> names = new java.util.ArrayList<>();
             names.add("multiplayer_join_connected");
             names.add("black_hole_ambient_rumble");
+            names.add("bh_grow_small");
+            names.add("bh_grow_big");
             for (int i = 1; i <= 3; i++) {
                 names.add("gunshot_close_player_" + i);
                 names.add("gunshot_far_away_" + i);

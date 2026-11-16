@@ -123,6 +123,99 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     double cx, cy = 1.7, cz, yaw, pitch;
     double hp = 100;
     int mag = 12, res = 60, kills, wave;
+    volatile int weapon, myKills;
+    double breakT, boardT;
+    boolean breakSent;
+
+    static final class Stat {
+        String name = "Player";
+        int kills, deaths;
+    }
+
+    static final class ChatMsg {
+        String text;
+        double t;
+    }
+
+    private final java.util.HashMap<String, Stat> stats = new java.util.HashMap<>();
+    private final ArrayList<ChatMsg> chatLog = new ArrayList<>();
+
+    private Stat stat(String id) {
+        Stat s = stats.get(id);
+        if (s == null) {
+            s = new Stat();
+            stats.put(id, s);
+        }
+        return s;
+    }
+
+    void equip(int w) {
+        if (w < 0 || w >= Weapons.NAME.length || myKills < Weapons.UNLOCK[w]) return;
+        weapon = w;
+        mag = Weapons.MAG[w];
+        res = Weapons.MAG[w] * 5;
+        rl = 0;
+        cd = .3;
+    }
+
+    private void addChat(String n, String s) {
+        ChatMsg c = new ChatMsg();
+        c.text = n + ": " + s;
+        c.t = weatherT;
+        synchronized (chatLog) {
+            chatLog.add(c);
+            while (chatLog.size() > 40) chatLog.remove(0);
+        }
+    }
+
+    String[] chatLines() {
+        synchronized (chatLog) {
+            String[] r = new String[chatLog.size()];
+            for (int i = 0; i < r.length; i++) r[i] = chatLog.get(i).text;
+            return r;
+        }
+    }
+
+    void sendChat(String s) {
+        if (s.length() > 80) s = s.substring(0, 80);
+        if (role == CLIENT) {
+            net.sendG(Net.obj("t", "chat", "m", s), null);
+        } else {
+            addChat(myName, s);
+            bc(Net.obj("t", "chat", "n", myName, "m", s));
+        }
+    }
+
+    private void pushBoard() {
+        stat("host").name = myName;
+        ArrayList<String> ids = new ArrayList<>(stats.keySet());
+        java.util.Collections.sort(ids, (a, b) -> stats.get(b).kills - stats.get(a).kills);
+        JSONArray arr = new JSONArray();
+        String[] rows = new String[ids.size()];
+        for (int i = 0; i < rows.length; i++) {
+            Stat s = stats.get(ids.get(i));
+            rows[i] = s.name + "\t" + s.kills + "\t" + s.deaths;
+            JSONArray e = new JSONArray();
+            e.put(ids.get(i)).put(s.name).put(s.kills).put(s.deaths);
+            arr.put(e);
+        }
+        hud.board = rows;
+        if (role == HOST) bc(Net.obj("t", "board", "a", arr));
+    }
+
+    private void applyBoard(JSONArray a) {
+        String[] rows = new String[a.length()];
+        for (int i = 0; i < rows.length; i++) {
+            JSONArray e = a.optJSONArray(i);
+            if (e == null) {
+                rows[i] = "?\t0\t0";
+                continue;
+            }
+            rows[i] = e.optString(1) + "\t" + e.optInt(2) + "\t" + e.optInt(3);
+            if (e.optString(0).equals(netId)) myKills = e.optInt(2);
+        }
+        hud.board = rows;
+    }
     double bhCur = .7;
     int state = MENU, role = SOLO, myIdx;
     String netId = "host";
@@ -780,8 +873,16 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         spr = 0;
         kz = kzv = kr = krv = kc = kcv = ky = kyv = kro = krov = 0;
         hp = 100;
-        mag = 12;
-        res = 60;
+        weapon = 0;
+        mag = Weapons.MAG[0];
+        res = Weapons.MAG[0] * 5;
+        myKills = 0;
+        breakT = 0;
+        breakSent = false;
+        if (!cli) {
+            stats.clear();
+            stat("host").name = myName;
+        }
         kills = 0;
         wave = 0;
         cx = SPAWN_AT[myIdx % 4][0];
@@ -840,6 +941,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     private void onWave(int w) {
         double a = bhSize(w - 1), b = bhSize(w);
         wave = w;
+        breakT = 0;
+        breakSent = false;
         saveProgress();
         ban(L.t("h_wave") + " " + wave);
         waveClock = 0;
@@ -848,6 +951,10 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             if (w == VOID_WAVE) awakeT = 0;
             ui.bhSound(1, 0);
             bhSnd = 1;
+        }
+        if (w > 1 && w < VOID_WAVE && b > a + .001) {
+            boolean tier = (a < 1.2 && b >= 1.2) || (a < 1.9 && b >= 1.9) || (a < 2.6 && b >= 2.6) || (a < 3.5 && b >= 3.5);
+            ui.sound(tier ? "bh_grow_big" : "bh_grow_small", tier ? 1f : .7f, 1f);
         }
         if (a < 1.2 && b >= 1.2) ban("THE VOID GROWS  -  RUNNERS");
         else if (a < 1.9 && b >= 1.9) ban("THE VOID GROWS  -  BRUTES");
@@ -879,9 +986,9 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     /* ---- weapon ---- */
 
     private void reload() {
-        if (rl > 0 || mag >= 12 || res <= 0) return;
+        if (rl > 0 || mag >= Weapons.MAG[weapon] || res <= 0) return;
         rlEmpty = mag <= 0;
-        RT = rlEmpty ? 2.2 : 1.75;
+        RT = (rlEmpty ? 2.2 : 1.75) * Weapons.RELOAD[weapon];
         rl = RT;
         rlEv = 0;
     }
@@ -957,19 +1064,24 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     private void shoot() {
         mag--;
         flash = .06;
-        cd = .3;
+        cd = Weapons.CD[weapon];
         sl = 0;
         sfx.tone(220, .18, Sfx.SAW, .25);
         sfx.noise(.12, .3, 3500);
-        kzv += 2.4 + rng.nextDouble() * .4;
-        krv += 4 + rng.nextDouble() * 1.2;
-        kcv += .9 + rng.nextDouble() * .3;
+        double kk = Weapons.KICK[weapon];
+        kzv += (2.4 + rng.nextDouble() * .4) * kk;
+        krv += (4 + rng.nextDouble() * 1.2) * kk;
+        kcv += (.9 + rng.nextDouble() * .3) * kk;
         kyv += (rng.nextDouble() - .5) * .5;
         krov += (rng.nextDouble() - .5) * 2;
         pitch = Math.min(1.4, pitch + .0035);
         spr = Math.min(.02, spr + .006);
         ejectBrass();
-        double sp = .004 + spr + spMv * .006;
+        for (int pi = 0; pi < Weapons.PEL[weapon]; pi++) fireRay();
+    }
+
+    private void fireRay() {
+        double sp = (.004 + spr + spMv * .006) * Weapons.SPREAD[weapon];
         double nx = (rng.nextDouble() - .5) * 2 * sp, ny = (rng.nextDouble() - .5) * 2 * sp;
         double th = Math.tan(35 * PI / 180);
         float[] d = Xf.dir(camWorld(), nx * th * vw / vh, ny * th, -1);
@@ -989,9 +1101,9 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             } catch (JSONException e) {
                 return;
             }
-            net.sendG(Net.obj("t", "shot", "o", o, "d", dd), null);
+            net.sendG(Net.obj("t", "shot", "o", o, "d", dd, "w", weapon), null);
         } else {
-            resolveHit("host", cx, cy, cz, dx, dy, dz);
+            resolveHit("host", cx, cy, cz, dx, dy, dz, Weapons.DMG[weapon]);
         }
     }
 
@@ -1016,7 +1128,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         return best < 0 ? null : new double[]{best, 0};
     }
 
-    private void resolveHit(String by, double ox, double oy, double oz, double dx, double dy, double dz) {
+    private void resolveHit(String by, double ox, double oy, double oz, double dx, double dy, double dz, double mul) {
         Zombie bz = null;
         double bt = -1;
         boolean head = false;
@@ -1031,7 +1143,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         }
         double w = world.rayWalls(ox, oy, oz, dx, dy, dz);
         if (bz == null || (w >= 0 && w < bt)) return;
-        bz.hp -= head ? 3 : 1;
+        bz.hp -= (head ? 3 : 1) * mul;
         double px = ox + dx * bt, py = oy + dy * bt, pz = oz + dz * bt;
         spawnBlood(px, py, pz);
         JSONArray p = new JSONArray();
@@ -1045,6 +1157,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             bz.dead = true;
             bz.dt = 0;
             kills++;
+            stat(by).kills++;
             sfx.tone(90, .4, Sfx.SQUARE, .15);
             if (by.equals("host")) res += 3;
             else sendTo(by, Net.obj("t", "ammo", "n", 3));
@@ -1082,7 +1195,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         double ox = o.optDouble(0), oy = o.optDouble(1), oz = o.optDouble(2);
         double dx = d.optDouble(0), dy = d.optDouble(1), dz = d.optDouble(2);
         double endT = rayEnd(ox, oy, oz, dx, dy, dz);
-        resolveHit(id, ox, oy, oz, dx, dy, dz);
+        resolveHit(id, ox, oy, oz, dx, dy, dz, Weapons.DMG[Weapons.clamp(m.optInt("w"))]);
         q.flashT = .06;
         shotSound(q);
         double ex = ox + dx * endT, ey = oy + dy * endT, ez = oz + dz * endT;
@@ -1340,7 +1453,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             fz /= L;
         }
         boolean fast = sprint || (set.autoRun && stick > .95);
-        double sp = crawling ? (fast ? 3.0 : 1.6) : (fast ? 6.5 : 4);
+        double sp = (crawling ? (fast ? 3.0 : 1.6) : (fast ? 6.5 : 4)) * Weapons.MOB[weapon];
         if (!grounded && airFast) sp *= 1.08;
         boolean moving = Math.hypot(fx, fz) > .1 && free && grounded;
         if (free) {
@@ -1467,7 +1580,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             }
             if (p >= .68 && (rlEv & 4) == 0) {
                 rlEv |= 4;
-                int n = Math.min(12 - mag, res);
+                int n = Math.min(Weapons.MAG[weapon] - mag, res);
                 mag += n;
                 res -= n;
                 kzv += .5;
@@ -1556,14 +1669,39 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                     spT = (wave >= VOID_WAVE ? Math.max(1.0, Math.min(3.0, 46.0 / Math.max(1, spawnTotal))) : 1.4) / (1 + .4 * nOther());
                 }
             } else if (wave < VOID_WAVE && alive() == 0) {
-                waveT += dt;
-                if (waveT > 3) {
-                    waveT = 0;
+                if (!breakSent) {
+                    breakSent = true;
+                    breakT = 60;
+                    bc(Net.obj("t", "brk", "s", 60));
+                }
+                breakT -= dt;
+                if (breakT <= 0) {
+                    breakT = 0;
+                    breakSent = false;
                     nextWave();
                 }
             }
             if (wave >= VOID_WAVE && waveClock >= WAVE_TIME) nextWave();
+        } else if (breakT > 0) {
+            breakT = Math.max(0, breakT - dt);
         }
+        boardT -= dt;
+        if (boardT <= 0) {
+            boardT = 1;
+            if (role != CLIENT) {
+                myKills = stat("host").kills;
+                pushBoard();
+            }
+        }
+        ArrayList<String> recent = new ArrayList<>();
+        synchronized (chatLog) {
+            for (int i = Math.max(0, chatLog.size() - 5); i < chatLog.size(); i++) {
+                if (weatherT - chatLog.get(i).t < 12) recent.add(chatLog.get(i).text);
+            }
+        }
+        hud.chat = recent.toArray(new String[0]);
+        hud.breakT = breakT;
+        hud.weapon = Weapons.NAME[weapon];
 
         updateZombies(dt, isHost);
         updateRemotes(dt);
@@ -1622,6 +1760,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 return;
             }
             pDead = true;
+            if (role != CLIENT) stat("host").deaths++;
             hp = 0;
             fireIn = false;
             hud.dead = true;
@@ -2155,6 +2294,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 startGame(true);
                 wave = m.optInt("wave");
                 kills = m.optInt("kills");
+                net.sendG(Net.obj("t", "name", "n", myName), null);
                 waveClock = m.optDouble("wt", 0);
                 if (wave >= VOID_WAVE) {
                     bhCur = bhSize(wave - 1);
@@ -2164,6 +2304,17 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 break;
             case "snap":
                 if (role == CLIENT && state == PLAY) applySnap(m);
+                break;
+            case "board": {
+                JSONArray ba = m.optJSONArray("a");
+                if (ba != null) applyBoard(ba);
+                break;
+            }
+            case "chat":
+                addChat(m.optString("n"), m.optString("m"));
+                break;
+            case "brk":
+                breakT = m.optDouble("s", 60);
                 break;
             case "hit": {
                 JSONArray p = m.optJSONArray("p");
@@ -2297,10 +2448,20 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                     q.z = m.optDouble("z");
                     q.yaw = m.optDouble("yaw");
                     q.pitch = m.optDouble("pitch");
+                    boolean wasDead = q.dead;
                     q.dead = m.optBoolean("dead");
+                    if (role == HOST && !wasDead && q.dead) stat(id).deaths++;
                     q.f = m.optInt("f");
                     q.y = m.optDouble("y");
                     q.mode = m.optInt("m");
+                } else if (t.equals("name")) {
+                    String nm = m.optString("n", "Player");
+                    stat(id).name = nm.length() > 16 ? nm.substring(0, 16) : nm;
+                } else if (t.equals("chat")) {
+                    String nm = stat(id).name, msg = m.optString("m");
+                    if (msg.length() > 80) msg = msg.substring(0, 80);
+                    addChat(nm, msg);
+                    bc(Net.obj("t", "chat", "n", nm, "m", msg));
                 } else if (t.equals("shot")) {
                     remoteShot(id, m);
                 }

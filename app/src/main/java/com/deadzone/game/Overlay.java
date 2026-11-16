@@ -23,7 +23,8 @@ final class Overlay extends View {
     private final Path mmArrow = new Path();
     boolean editMode;
     int selected = -1;
-    Runnable onPause;
+    Runnable onPause, onChat, onShop;
+    private boolean showBoard;
 
     private int jid = -1, lid = -1, fid = -1, dragId = -1;
     private float jx, jy, lx, ly;
@@ -149,12 +150,12 @@ final class Overlay extends View {
         p.setTextAlign(Paint.Align.RIGHT);
         p.setTextSize(22 * d);
         p.setColor(0xCCdddddd);
-        c.drawText(hud.mag + " / " + hud.res, w - 62 * d, 32 * d, p);
+        c.drawText(hud.weapon + "  " + hud.mag + " / " + hud.res, w - 128 * d, 32 * d, p);
         String note = hud.reloading ? L.t("h_rel") : (hud.mag == 0 && hud.res == 0 ? L.t("h_noammo") : "");
         if (note.length() > 0) {
             p.setTextSize(14 * d);
             p.setColor(0xFFcc3333);
-            c.drawText(note, w - 62 * d, 52 * d, p);
+            c.drawText(note, w - 128 * d, 52 * d, p);
         }
 
         p.setTextAlign(Paint.Align.CENTER);
@@ -178,7 +179,10 @@ final class Overlay extends View {
         }
 
         if (bigMap) drawBig(c, w, h);
-        else drawMap(c, w);
+        else {
+            drawMap(c, w);
+            drawSocial(c, w, h);
+        }
 
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeWidth(Math.max(1f, d));
@@ -279,6 +283,66 @@ final class Overlay extends View {
         p.setTextAlign(Paint.Align.LEFT);
     }
 
+    private void drawSocial(Canvas c, int w, int h) {
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0x66000000);
+        c.drawCircle(w - 62 * d, 30 * d, 14 * d, p);
+        c.drawCircle(w - 94 * d, 30 * d, 14 * d, p);
+        p.setColor(0xFFffffff);
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setTextSize(8 * d);
+        c.drawText("CHAT", w - 62 * d, 33 * d, p);
+        c.drawText("TAB", w - 94 * d, 33 * d, p);
+        if (hud.breakT > 0) {
+            int s = (int) Math.ceil(hud.breakT);
+            p.setTextSize(15 * d);
+            c.drawText(L.t("h_next") + " " + (s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60), w / 2f, 80 * d, p);
+            p.setColor(0xFF5a1010);
+            c.drawRect(w / 2f - 60 * d, 88 * d, w / 2f + 60 * d, 112 * d, p);
+            p.setColor(0xFFffffff);
+            p.setTextSize(13 * d);
+            c.drawText(L.t("h_shop"), w / 2f, 105 * d, p);
+        }
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setTextSize(11 * d);
+        String[] ch = hud.chat;
+        for (int i = 0; i < ch.length; i++) {
+            p.setColor(0xAA000000);
+            c.drawText(ch[i], 131 * d, 61 * d + i * 13 * d, p);
+            p.setColor(0xFFe8e8e8);
+            c.drawText(ch[i], 130 * d, 60 * d + i * 13 * d, p);
+        }
+        if (showBoard) {
+            String[] rows = hud.board;
+            float pw = Math.min(w * .6f, 380 * d), rh = 18 * d, ph = rh * (rows.length + 2);
+            float l0 = (w - pw) / 2f, t0 = Math.max(10 * d, (h - ph) / 2f);
+            p.setColor(0xDD000000);
+            c.drawRect(l0, t0, l0 + pw, t0 + ph, p);
+            p.setStyle(Paint.Style.STROKE);
+            p.setColor(0xFF8a1a1a);
+            c.drawRect(l0, t0, l0 + pw, t0 + ph, p);
+            p.setStyle(Paint.Style.FILL);
+            p.setTextSize(12 * d);
+            p.setColor(0xFFcc4444);
+            c.drawText(L.t("h_board"), l0 + 12 * d, t0 + rh, p);
+            p.setTextAlign(Paint.Align.RIGHT);
+            c.drawText(L.t("h_k"), l0 + pw - 90 * d, t0 + rh, p);
+            c.drawText(L.t("h_d"), l0 + pw - 12 * d, t0 + rh, p);
+            p.setColor(0xFFffffff);
+            for (int i = 0; i < rows.length; i++) {
+                String[] f = rows[i].split("\t");
+                if (f.length < 3) continue;
+                float y = t0 + rh * (i + 2);
+                p.setTextAlign(Paint.Align.LEFT);
+                c.drawText(f[0], l0 + 12 * d, y, p);
+                p.setTextAlign(Paint.Align.RIGHT);
+                c.drawText(f[1], l0 + pw - 90 * d, y, p);
+                c.drawText(f[2], l0 + pw - 12 * d, y, p);
+            }
+            p.setTextAlign(Paint.Align.LEFT);
+        }
+    }
+
     private void drawMap(Canvas c, int w) {
         float r = 50 * d, mx = 16 * d + r, my = 72 * d + r, s = r / 30f;
         double yaw = hud.pyaw, cs = Math.cos(yaw), sn = Math.sin(yaw);
@@ -348,6 +412,19 @@ final class Overlay extends View {
 
     private void down(int id, float x, float y) {
         float w = getWidth();
+        if (dist(x, y, w - 62 * d, 30 * d) <= 22 * d) {
+            if (onChat != null) onChat.run();
+            return;
+        }
+        if (dist(x, y, w - 94 * d, 30 * d) <= 22 * d) {
+            showBoard = !showBoard;
+            invalidate();
+            return;
+        }
+        if (hud.breakT > 0 && Math.abs(x - w / 2f) <= 60 * d && Math.abs(y - 100 * d) <= 14 * d) {
+            if (onShop != null) onShop.run();
+            return;
+        }
         if (dist(x, y, w - 30 * d, 30 * d) <= 24 * d) {
             if (onPause != null) onPause.run();
             return;

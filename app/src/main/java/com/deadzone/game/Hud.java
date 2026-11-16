@@ -9,6 +9,10 @@ final class Hud {
     volatile String banner = "";
     volatile double banT;
     volatile double waveLeft = -1;
+    volatile double breakT;
+    volatile String weapon = "PISTOL";
+    volatile String[] chat = new String[0];
+    volatile String[] board = new String[0];
     volatile double vig;
     volatile double stickX, stickY;
     volatile double px, pz, pyaw, bh = .7;
