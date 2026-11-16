@@ -431,6 +431,8 @@ final class World {
     private void car(double x, double z, boolean v) {
         box(x, z, v ? 1.8 : 4.2, v ? 4.2 : 1.8, 1, mRust);
         mb(v ? 1.5 : 2.2, .7, v ? 2.2 : 1.5, x, 1.35, z, mRust);
+        solidBox(x, 1.35, z, v ? 1.5 : 2.2, .7, v ? 2.2 : 1.5);
+        obs.add(new double[]{x, z, v ? 1.5 : 2.2, v ? 2.2 : 1.5, 1.7});
     }
 
     private void barrel(double x, double z, boolean fire) {
@@ -674,7 +676,7 @@ final class World {
             n++;
         }
 
-        int nc = 34 + rng.nextInt(12);
+        int nc = 17 + rng.nextInt(6);
         for (int i = 0, n = 0; i < 800 && n < nc; i++) {
             boolean onRoad = rng.nextInt(10) < 7;
             double[] p = onRoad ? findRoad(4.4, 4.4, 1) : find(4.4, 4.4, 1, 1);
