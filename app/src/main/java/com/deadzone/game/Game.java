@@ -1414,7 +1414,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         double fovT = 70 + (runFov ? 9 : 0) + (diving ? 5 : 0) + ((slideT > 0 || vaultT > 0) ? 7 : 0);
         fovCur += (fovT - fovCur) * Math.min(1, dt * 6);
         if (moving && !crawling) bob += dt * sp * 1.6;
-        int stepIdx = (int) Math.floor((bob + Math.PI / 2) / (2 * Math.PI));
+        int stepIdx = (int) Math.floor((bob + Math.PI / 2) / Math.PI);
         if (stepIdx != stepNo) {
             if (moving && !crawling) footstep(fast);
             stepNo = stepIdx;
@@ -1879,7 +1879,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     }
 
     private void footstep(boolean run) {
-        float rate = .95f + rng.nextFloat() * .1f;
+        float rate = (run ? 1.15f : 1.08f) + rng.nextFloat() * .1f;
         ui.sound("footstep_" + surfaceAt(cx, cz) + (run ? "_run" : "") + "_" + (1 + rng.nextInt(4)), run ? .85f : .6f, rate);
         double wet = wetUnder(cx, cz);
         if (wet > .05) ui.sound("footstep_water_splash" + (run ? "_run" : "") + "_" + (1 + rng.nextInt(4)), (float) (wet * (run ? .9 : .65)), rate);
