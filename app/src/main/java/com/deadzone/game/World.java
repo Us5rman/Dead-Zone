@@ -692,13 +692,13 @@ final class World {
             barrel(p[0], p[1], fire);
             n++;
         }
-        int ncr = 60 + rng.nextInt(20);
+        int ncr = 30 + rng.nextInt(10);
         for (int i = 0, n = 0; i < 900 && n < ncr; i++) {
             double s = rnd(1, 1.8);
             double[] p = find(s, s, 1, 1);
             if (p == null) continue;
             box(p[0], p[1], s, s, s, mCrate);
-            if (rng.nextBoolean() && spaceFree(p[0] + s + .1, p[1], s, s, .2)) box(p[0] + s + .1, p[1], s, s, s, mCrate);
+            if (rng.nextInt(4) == 0 && spaceFree(p[0] + s + .1, p[1], s, s, .2)) box(p[0] + s + .1, p[1], s, s, s, mCrate);
             n++;
         }
         int nsb = 14 + rng.nextInt(6);

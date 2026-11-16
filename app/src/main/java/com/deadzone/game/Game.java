@@ -1221,7 +1221,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
     private void collide(double[] p, double r, double feet) {
         for (double[] o : world.obs) {
-            if (o[4] <= feet + .35 || o == vaultObs) continue;
+            if (o[4] <= feet + (grounded ? .35 : .1) || o == vaultObs) continue;
             double cxx = Math.max(o[0] - o[2] / 2, Math.min(p[0], o[0] + o[2] / 2));
             double czz = Math.max(o[1] - o[3] / 2, Math.min(p[1], o[1] + o[3] / 2));
             double dx = p[0] - cxx, dz = p[1] - czz, d = Math.hypot(dx, dz);
@@ -1377,7 +1377,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
         double gnd = groundAt(cx, cz, .3, jy);
         if (vaultT > 0) {
-            jy += (vaultTop - jy) * Math.min(1, dt * 16);
+            jy += (Math.max(vaultTop, gnd) - jy) * Math.min(1, dt * 16);
             vy = 0;
             grounded = true;
         } else if (!grounded || jy > gnd + .001 || vy > 0) {
