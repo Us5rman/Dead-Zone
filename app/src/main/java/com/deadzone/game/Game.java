@@ -123,6 +123,8 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     double cx, cy = 1.7, cz, yaw, pitch;
     double hp = 100;
     int mag = 12, res = 60, kills, wave;
+    /** true while the menu is on screen: the world is not rendered then */
+    volatile boolean menuUp = true;
     volatile int weapon, myKills;
     double breakT, boardT;
     boolean breakSent;
@@ -445,7 +447,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 bhSnd = 0;
             }
             try {
-                Thread.sleep(6);
+                Thread.sleep(10);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -469,8 +471,17 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 bhSnd = 2;
             }
         }
-        render();
-        ui.redraw();
+        if (menuUp) {
+            GLES20.glClearColor(0f, 0f, 0f, 1f);
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
+            try {
+                Sky.drawMenuHole(vw, vh, dt);
+            } catch (RuntimeException ignored) {
+            }
+        } else {
+            render();
+            ui.redraw();
+        }
         frames++;
         if (now - fpsT >= 1000000000L) {
             hud.fps = frames;

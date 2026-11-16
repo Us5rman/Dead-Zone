@@ -798,23 +798,28 @@ public class MainActivity extends Activity implements Game.Ui {
         ScrollView sv = new ScrollView(this);
         sv.setBackgroundColor(0x00000000);
         sv.addView(col, new FrameLayout.LayoutParams(-1, -2));
-        FrameLayout wrap = new FrameLayout(this);
+        final FrameLayout wrap = new FrameLayout(this) {
+            @Override
+            public void setVisibility(int v) {
+                super.setVisibility(v);
+                game.menuUp = v == View.VISIBLE;
+            }
+        };
         wrap.setBackgroundColor(0x00000000);
         wrap.addView(sv, new FrameLayout.LayoutParams(-1, -1));
-        // two red lines: near the top and near the bottom; the black hole behind is cut off by them
-        int lh = dp(2), tm = dp(6), bm = dp(10);
-        View top = new View(this);
-        top.setBackgroundColor(0xFFcc2222);
-        FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(-1, lh, Gravity.TOP);
-        tp.topMargin = tm;
-        wrap.addView(top, tp);
-        View bot = new View(this);
+        // one red line at 76% of the screen height; the black hole behind it is cut off there
+        final View bot = new View(this);
         bot.setBackgroundColor(0xFFcc2222);
-        FrameLayout.LayoutParams bp2 = new FrameLayout.LayoutParams(-1, lh, Gravity.BOTTOM);
-        bp2.bottomMargin = bm;
+        final FrameLayout.LayoutParams bp2 = new FrameLayout.LayoutParams(-1, dp(2), Gravity.TOP);
+        bp2.topMargin = dp(300);
         wrap.addView(bot, bp2);
-        Sky.menuTopPx = tm + lh;
-        Sky.menuBotPx = bm + lh;
+        wrap.addOnLayoutChangeListener((lv, lL, lT, lR, lB, lOl, lOt, lOr, lOb) -> {
+            int want = (int) ((lB - lT) * Sky.MENU_LINE);
+            if (lB - lT > 0 && bp2.topMargin != want) {
+                bp2.topMargin = want;
+                bot.setLayoutParams(bp2);
+            }
+        });
         return wrap;
     }
 
@@ -1330,7 +1335,7 @@ public class MainActivity extends Activity implements Game.Ui {
                 resume.setVisibility(canResume ? View.VISIBLE : View.GONE);
                 exitBtn.setVisibility(canResume ? View.VISIBLE : View.GONE);
                 // solo pause / main menu: the GL view draws the black hole behind; online pause keeps the game hidden
-                menu.setBackgroundColor(canResume && game.role != Game.SOLO ? 0xFF000000 : 0x00000000);
+                menu.setBackgroundColor(0x00000000);
                 settingsView.setVisibility(View.GONE);
                 worldsView.setVisibility(View.GONE);
                 multiView.setVisibility(View.GONE);

@@ -107,35 +107,8 @@ final class Sky {
                 vec3 bt = normalize(cross(vec3(0.0, 1.0, 0.0), uBH));
                 vec3 bb = cross(uBH, bt);
                 vec2 uv = vec2(dot(d, bt), dot(d, bb)) / rs;
-                float ca = 0.9553;
-                float sa = 0.2955;
-                float x = uv.x * ca - uv.y * sa;
-                float y = uv.x * sa + uv.y * ca;
-                float r = length(vec2(x, y));
-                float ay = abs(y);
-                col *= smoothstep(0.97, 1.0, r);
-
-                float dop = 0.55 + 0.45 * smoothstep(-1.5, 1.5, y);
-                float th = 0.07 + 0.05 * ay;
-                float across = exp(-pow(x / th, 2.0));
-                float prof = smoothstep(1.05, 1.4, ay) * smoothstep(4.2, 1.7, ay);
-                float sk = 0.55 + 0.9 * vn(vec2(x * 9.0 / (1.0 + 0.3 * ay), y * 1.6 - uTime * 0.35));
-                vec3 hot = vec3(1.0, 0.86, 0.66);
-                vec3 cool = vec3(0.95, 0.42, 0.12);
-                vec3 dc = mix(hot, cool, smoothstep(1.1, 3.2, max(ay, r * 0.8)));
-                float em = across * prof * dop * sk * 2.2;
-
-                float sideness = abs(x) / max(r, 0.001);
-                float arc1 = exp(-pow((r - 1.28) / 0.2, 2.0)) * smoothstep(0.15, 0.9, sideness);
-                float arc2 = exp(-pow((r - 1.75) / 0.45, 2.0)) * smoothstep(0.3, 1.0, sideness);
-                float sk2 = 0.6 + 0.8 * vn(vec2(r * 5.0, (y / max(r, 0.001)) * 6.0 - uTime * 0.2));
-                em += arc1 * 1.6 * dop + arc2 * 0.35 * sk2 * dop;
-
-                float ring = exp(-pow((r - 1.035) / 0.022, 2.0));
-                float glow = exp(-max(r - 1.0, 0.0) * 0.9) * smoothstep(0.99, 1.05, r) * 0.12;
-                col += dc * em * smoothstep(0.99, 1.06, r);
-                col += vec3(1.0, 0.92, 0.78) * ring * 1.4;
-                col += vec3(0.9, 0.5, 0.2) * glow;
+                col *= smoothstep(0.97, 1.0, length(uv));
+                col += gargantua(uv, uTime, 1.0);
               }
 
               if (d.y > 0.015) {
@@ -159,6 +132,62 @@ final class Sky {
             }
             """;
 
+
+
+    /** Gargantua style black hole: dark shadow, thin photon ring, flat disc band and lensed arcs over/under it */
+    private static final String HOLE_FN = """
+            float hfbm(vec2 p) {
+              float v = 0.0;
+              float a = 0.5;
+              for (int i = 0; i < 4; i++) {
+                v += a * vn(p);
+                p = mat2(1.6, 1.2, -1.2, 1.6) * p + 7.3;
+                a *= 0.5;
+              }
+              return v * 1.0667;
+            }
+
+            vec3 gargantua(vec2 uv, float t, float boost) {
+              float ca = 0.9848;
+              float sa = -0.1736;
+              float x = uv.x * ca - uv.y * sa;
+              float y = uv.x * sa + uv.y * ca;
+              float r = length(vec2(x, y));
+              float rn = max(r, 0.001);
+              float ax = abs(x);
+              float dop = 0.42 + 0.9 * smoothstep(-2.6, 2.6, x);
+              float ang = atan(y, x + 0.00001);
+              float orbR = 1.0 / (r * sqrt(r) + 0.6);
+
+              float up = smoothstep(-0.2, 0.85, y / rn);
+              float dn = smoothstep(0.4, 0.98, -y / rn);
+              float sw = hfbm(vec2(ang * 2.4 - t * 0.35 * orbR, r * 7.0));
+              float w1 = (r - 1.36) / 0.28;
+              float w2 = (r - 1.95) / 0.62;
+              float w3 = (r - 1.16) / 0.09;
+              float arcs = exp(-w1 * w1) * up * 1.9 + exp(-w2 * w2) * up * 0.55 + exp(-w3 * w3) * dn;
+              arcs *= (0.4 + 1.15 * sw) * dop;
+
+              float th = 0.042 + 0.03 * ax;
+              float across = exp(-(y / th) * (y / th));
+              float prof = smoothstep(1.0, 1.4, ax) * smoothstep(6.2, 2.2, ax);
+              float orb = t * 0.5 * orbR * (x < 0.0 ? -1.0 : 1.0);
+              float sk = 0.4 + 1.1 * hfbm(vec2(x * 0.85 - orb, y * 13.0));
+              float band = across * prof * sk * dop * 2.8;
+
+              vec3 hot = vec3(1.0, 0.93, 0.8);
+              vec3 warm = vec3(0.95, 0.55, 0.22);
+              vec3 cool = vec3(0.55, 0.26, 0.10);
+              vec3 dcb = mix(hot, mix(warm, cool, smoothstep(2.5, 6.0, ax)), smoothstep(1.1, 3.0, ax));
+              vec3 dca = mix(hot, warm, smoothstep(1.15, 2.6, r));
+
+              vec3 col = dcb * band + dca * arcs;
+              float rg = (r - 1.045) / 0.02;
+              col += vec3(1.0, 0.95, 0.85) * exp(-rg * rg) * (1.2 + 0.6 * dop);
+              col += vec3(0.7, 0.4, 0.18) * exp(-max(r - 1.0, 0.0) * 0.6) * 0.10;
+              return col * smoothstep(0.99, 1.05, r) * boost;
+            }
+            """;
 
     private static final String HOLE_FRAG = """
             #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -208,36 +237,7 @@ final class Sky {
               col += vec3(0.30, 0.16, 0.07) * (0.20 * exp(-r * 0.32) + 0.35 * exp(-r * 1.1)) * boost;
               col *= smoothstep(0.97, 1.0, r);
 
-              float ca = 0.9553;
-              float sa = 0.2955;
-              float x = uv.x * ca - uv.y * sa;
-              float y = uv.x * sa + uv.y * ca;
-              float ay = abs(y);
-
-              float dop = 0.55 + 0.45 * smoothstep(-1.5, 1.5, y);
-              float th = 0.07 + 0.05 * ay;
-              float across = exp(-(x / th) * (x / th));
-              float prof = smoothstep(1.05, 1.4, ay) * smoothstep(4.2, 1.7, ay);
-              float sk = 0.5 + 0.95 * fbm(vec2(x * 9.0 / (1.0 + 0.3 * ay), y * 1.6 - uTime * 0.35));
-              vec3 hot = vec3(1.0, 0.86, 0.66);
-              vec3 cool = vec3(0.95, 0.42, 0.12);
-              vec3 dc = mix(hot, cool, smoothstep(1.1, 3.2, max(ay, r * 0.8)));
-              float em = across * prof * dop * sk * 2.2;
-
-              float sideness = abs(x) / max(r, 0.001);
-              float a1 = (r - 1.28) / 0.2;
-              float a2 = (r - 1.75) / 0.45;
-              float arc1 = exp(-a1 * a1) * smoothstep(0.15, 0.9, sideness);
-              float arc2 = exp(-a2 * a2) * smoothstep(0.3, 1.0, sideness);
-              float sk2 = 0.55 + 0.9 * fbm(vec2(r * 5.0, (y / max(r, 0.001)) * 6.0 - uTime * 0.2));
-              em += arc1 * 1.6 * dop + arc2 * 0.4 * sk2 * dop;
-
-              float rg = (r - 1.035) / 0.022;
-              float ring = exp(-rg * rg);
-              float glow = exp(-max(r - 1.0, 0.0) * 0.9) * smoothstep(0.99, 1.05, r) * 0.14;
-              col += dc * em * smoothstep(0.99, 1.06, r) * boost;
-              col += vec3(1.0, 0.92, 0.78) * ring * 1.5 * boost;
-              col += vec3(0.9, 0.5, 0.2) * glow * boost;
+              col += gargantua(uv, uTime, boost);
               return col;
             }
 
@@ -250,7 +250,7 @@ final class Sky {
               float boost = 1.0 + uTouch.z * 1.1 * exp(-length(uTouch.xy - uC) / (uR * 4.0));
               vec2 dd = fc - uC;
               vec3 col;
-              if (dot(dd, dd) < 40.0 * uR * uR) {
+              if (dot(dd, dd) < 60.0 * uR * uR) {
                 col = scene(fc + vec2(-0.25, -0.25), boost) + scene(fc + vec2(0.25, -0.25), boost)
                     + scene(fc + vec2(-0.25, 0.25), boost) + scene(fc + vec2(0.25, 0.25), boost);
                 col *= 0.25;
@@ -286,6 +286,8 @@ final class Sky {
     /** menu touch point (px from top-left) and band, set from the UI thread */
     static volatile float menuX, menuY, menuTopPx = 20f, menuBotPx = 30f;
     static volatile boolean menuDown;
+    /** the red line sits at this fraction of the screen height; everything below it is cut off */
+    static final float MENU_LINE = .76f;
     private static float touchAmt;
     private static float holeT;
 
@@ -294,9 +296,9 @@ final class Sky {
         holeT = (holeT + (float) dt) % 4000f;
         float target = menuDown ? 1f : 0f;
         touchAmt += (target - touchAmt) * (float) Math.min(1, dt * (menuDown ? 9 : 3.5));
-        float bandTop = menuTopPx, bandBot = h - menuBotPx;
-        float rad = h * .15f;
-        float cx = w * .70f, cy = bandBot - rad * .25f;
+        float bandTop = 0f, bandBot = h * MENU_LINE;
+        float rad = Math.min(h * .17f, w * .075f);
+        float cx = w * .66f, cy = bandBot - rad * .3f;
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
         GLES20.glViewport(0, 0, w, h);
         GLES20.glUseProgram(holeProg);
@@ -324,7 +326,7 @@ final class Sky {
 
     private static void initHole() {
         try {
-            holeProg = link(SKY_VERT, HOLE_FRAG, new String[]{"aP"});
+            holeProg = link(SKY_VERT, HOLE_FRAG.replace("vec3 scene(", HOLE_FN + "\nvec3 scene("), new String[]{"aP"});
             hRes = GLES20.glGetUniformLocation(holeProg, "uRes");
             hC = GLES20.glGetUniformLocation(holeProg, "uC");
             hR = GLES20.glGetUniformLocation(holeProg, "uR");
@@ -577,7 +579,7 @@ final class Sky {
     static void init() {
         FBO[0] = FBO[1] = 0;
         reflOk = false;
-        skyProg = link(SKY_VERT, SKY_FRAG, new String[]{"aP"});
+        skyProg = link(SKY_VERT, SKY_FRAG.replace("void main() {", HOLE_FN + "\nvoid main() {"), new String[]{"aP"});
         int[] vu = new int[1];
         GLES20.glGetIntegerv(GLES20.GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, vu, 0);
         vtf = vu[0] > 0;
