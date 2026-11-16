@@ -149,8 +149,22 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         return s;
     }
 
+    /** the special name that gets everything, also online */
+    boolean admin() {
+        return "Us5rman".equalsIgnoreCase(myName == null ? "" : myName.trim());
+    }
+
+    /** solo: everything is free. online: kills unlock guns and the shop opens between waves, unless admin */
+    boolean canUse(int w) {
+        return role == SOLO || admin() || myKills >= Weapons.UNLOCK[w];
+    }
+
+    boolean shopOpen() {
+        return role == SOLO || admin() || breakT > 0;
+    }
+
     void equip(int w) {
-        if (w < 0 || w >= Weapons.NAME.length) return;
+        if (w < 0 || w >= Weapons.NAME.length || !canUse(w)) return;
         weapon = w;
         mag = Weapons.MAG[w];
         res = Weapons.MAG[w] * 5;
@@ -1702,6 +1716,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         hud.chat = recent.toArray(new String[0]);
         hud.breakT = breakT;
         hud.weapon = Weapons.NAME[weapon];
+        hud.shopOk = shopOpen();
 
         updateZombies(dt, isHost);
         updateRemotes(dt);

@@ -298,7 +298,8 @@ final class Overlay extends View {
             p.setTextSize(15 * d);
             c.drawText(L.t("h_next") + " " + (s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60), w / 2f, 80 * d, p);
         }
-        // SHOP button, always available, same look as the menu buttons
+        // SHOP button, same look as the menu buttons (dimmed while locked online)
+        p.setAlpha(255);
         float sl = w / 2f - 46 * d, sr = w / 2f + 46 * d, st = 8 * d, sb = 36 * d;
         p.setStyle(Paint.Style.FILL);
         p.setColor(0xFF5A0F10);
@@ -314,6 +315,11 @@ final class Overlay extends View {
         p.setFakeBoldText(true);
         c.drawText(L.t("h_shop"), w / 2f, 27 * d, p);
         p.setFakeBoldText(false);
+        if (!hud.shopOk) {
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(0x99000000);
+            c.drawRect(sl, st, sr, sb, p);
+        }
         p.setTextAlign(Paint.Align.LEFT);
         p.setTextSize(11 * d);
         String[] ch = hud.chat;
@@ -433,7 +439,7 @@ final class Overlay extends View {
             return;
         }
         if (Math.abs(x - w / 2f) <= 50 * d && y >= 4 * d && y <= 40 * d) {
-            if (onShop != null) onShop.run();
+            if (hud.shopOk && onShop != null) onShop.run();
             return;
         }
         if (dist(x, y, w - 30 * d, 30 * d) <= 24 * d) {

@@ -1,0 +1,6 @@
+Sky, black hole, cloud, rain and fog look inspired by Bliss Shaders (an edit of Chocapic13's shaders).
+Bliss: https://github.com/X0nk/Bliss-Shader
+Chocapic13: https://www.curseforge.com/minecraft/customization/chocapic13-shaders
+All shader code in this project was written from scratch for OpenGL ES 2.0.
+Thunder sounds: tanweraman, u_39xav15uou and patricksilvey (Pixabay).
+Motion blur approach (screen-space velocity from the previous frame, dithered taps, strength 1.0) follows the one in Super Duper Vanilla by Eldeston (FlameRender (C) Studios License 1.6). The code here is a from-scratch reimplementation for OpenGL ES 2.0; if you redistribute the game publicly, keep this credit and read that license first.

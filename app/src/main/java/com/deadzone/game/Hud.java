@@ -10,6 +10,7 @@ final class Hud {
     volatile double banT;
     volatile double waveLeft = -1;
     volatile double breakT;
+    volatile boolean shopOk = true;
     volatile String weapon = "PISTOL";
     volatile String[] chat = new String[0];
     volatile String[] board = new String[0];

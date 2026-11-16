@@ -100,6 +100,7 @@ public class MainActivity extends Activity implements Game.Ui {
     }
 
     private void openShop() {
+        if (!game.shopOpen()) return;
         final Dialog dlg = new Dialog(this);
         dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout box = new LinearLayout(this);
@@ -112,9 +113,10 @@ public class MainActivity extends Activity implements Game.Ui {
         box.addView(text(L.t("h_shop"), 22, 0xFFcc2222, true));
         for (int i = 0; i < Weapons.NAME.length; i++) {
             final int wi = i;
-            boolean eq = game.weapon == i;
-            Button b = button(Weapons.NAME[i] + (eq ? "  [EQUIPPED]" : "") + "   MOBILITY " + Math.round(Weapons.MOB[i] * 100) + "%", 14);
+            boolean eq = game.weapon == i, ok = game.canUse(i);
+            Button b = button(Weapons.NAME[i] + (eq ? "  [EQUIPPED]" : ok ? "" : "  NEED " + Weapons.UNLOCK[i] + " KILLS") + "   MOBILITY " + Math.round(Weapons.MOB[i] * 100) + "%", 14);
             if (eq) style(b, 0xFF8a1a1a, 0xFFff5a4a);
+            setBtn(b, ok && !eq);
             b.setOnClickListener(v -> {
                 onGl(() -> game.equip(wi));
                 dlg.dismiss();
