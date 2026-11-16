@@ -20,6 +20,7 @@ import android.os.Bundle;
 import android.text.InputFilter;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -543,7 +544,7 @@ public class MainActivity extends Activity implements Game.Ui {
         int resumeVis = resume.getVisibility();
         CharSequence st = status.getText();
         int bg = menu.getBackground() instanceof android.graphics.drawable.ColorDrawable
-                ? ((android.graphics.drawable.ColorDrawable) menu.getBackground()).getColor() : 0xFF000000;
+                ? ((android.graphics.drawable.ColorDrawable) menu.getBackground()).getColor() : 0x00000000;
         int menuVis = menu.getVisibility(), setVis = settingsView.getVisibility(), worldsVis = worldsView.getVisibility();
         int multiVis = multiView.getVisibility();
         int overVis = over.getVisibility(), editVis = editBar.getVisibility();
@@ -795,9 +796,26 @@ public class MainActivity extends Activity implements Game.Ui {
         exitBtn.setOnClickListener(v -> onGl(() -> game.toMenu()));
 
         ScrollView sv = new ScrollView(this);
-        sv.setBackgroundColor(0xFF000000);
+        sv.setBackgroundColor(0x00000000);
         sv.addView(col, new FrameLayout.LayoutParams(-1, -2));
-        return sv;
+        FrameLayout wrap = new FrameLayout(this);
+        wrap.setBackgroundColor(0x00000000);
+        wrap.addView(sv, new FrameLayout.LayoutParams(-1, -1));
+        // two red lines: near the top and near the bottom; the black hole behind is cut off by them
+        int lh = dp(2), tm = dp(6), bm = dp(10);
+        View top = new View(this);
+        top.setBackgroundColor(0xFFcc2222);
+        FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(-1, lh, Gravity.TOP);
+        tp.topMargin = tm;
+        wrap.addView(top, tp);
+        View bot = new View(this);
+        bot.setBackgroundColor(0xFFcc2222);
+        FrameLayout.LayoutParams bp2 = new FrameLayout.LayoutParams(-1, lh, Gravity.BOTTOM);
+        bp2.bottomMargin = bm;
+        wrap.addView(bot, bp2);
+        Sky.menuTopPx = tm + lh;
+        Sky.menuBotPx = bm + lh;
+        return wrap;
     }
 
     private View buildMulti() {
@@ -1311,7 +1329,8 @@ public class MainActivity extends Activity implements Game.Ui {
             public void run() {
                 resume.setVisibility(canResume ? View.VISIBLE : View.GONE);
                 exitBtn.setVisibility(canResume ? View.VISIBLE : View.GONE);
-                menu.setBackgroundColor(0xFF000000);
+                // solo pause / main menu: the GL view draws the black hole behind; online pause keeps the game hidden
+                menu.setBackgroundColor(canResume && game.role != Game.SOLO ? 0xFF000000 : 0x00000000);
                 settingsView.setVisibility(View.GONE);
                 worldsView.setVisibility(View.GONE);
                 multiView.setVisibility(View.GONE);
@@ -1444,9 +1463,58 @@ public class MainActivity extends Activity implements Game.Ui {
         }
     }
 
+    private MediaPlayer menuP;
+    private final android.os.Handler menuH = new android.os.Handler();
+    private final Runnable menuTick = new Runnable() {
+        @Override
+        public void run() {
+            try {
+                boolean want = menu != null && menu.getVisibility() == View.VISIBLE && menuActive;
+                if (want) {
+                    if (menuP == null) {
+                        menuP = MediaPlayer.create(MainActivity.this, R.raw.black_hole);
+                        if (menuP != null) {
+                            menuP.setLooping(true);
+                            menuP.setVolume(.8f, .8f);
+                        }
+                    }
+                    if (menuP != null && !menuP.isPlaying()) menuP.start();
+                } else if (menuP != null && menuP.isPlaying()) {
+                    menuP.pause();
+                }
+            } catch (Exception ignored) {
+            }
+            menuH.postDelayed(this, 300);
+        }
+    };
+    private boolean menuActive;
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent e) {
+        if (menu != null && menu.getVisibility() == View.VISIBLE) {
+            int a = e.getActionMasked();
+            if (a == MotionEvent.ACTION_DOWN || a == MotionEvent.ACTION_MOVE) {
+                Sky.menuX = e.getX();
+                Sky.menuY = e.getY();
+                Sky.menuDown = true;
+            } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
+                Sky.menuDown = false;
+            }
+        } else {
+            Sky.menuDown = false;
+        }
+        return super.dispatchTouchEvent(e);
+    }
+
     @Override
     protected void onPause() {
         super.onPause();
+        menuActive = false;
+        menuH.removeCallbacks(menuTick);
+        try {
+            if (menuP != null && menuP.isPlaying()) menuP.pause();
+        } catch (Exception ignored) {
+        }
         thermalH.removeCallbacks(thermalTick);
         stopRain();
         try {
@@ -1460,6 +1528,9 @@ public class MainActivity extends Activity implements Game.Ui {
     @Override
     protected void onResume() {
         super.onResume();
+        menuActive = true;
+        menuH.removeCallbacks(menuTick);
+        menuH.post(menuTick);
         try {
             if (bhResume && bhP != null) bhP.start();
         } catch (Exception ignored) {
@@ -1478,6 +1549,7 @@ public class MainActivity extends Activity implements Game.Ui {
         stopRain();
         if (pool != null) pool.release();
         if (bhP != null) bhP.release();
+        if (menuP != null) menuP.release();
         game.release();
         super.onDestroy();
     }

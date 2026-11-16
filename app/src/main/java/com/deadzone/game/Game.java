@@ -433,6 +433,10 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         if (state == MENU || (paused && role == SOLO)) {
             GLES20.glClearColor(0f, 0f, 0f, 1f);
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
+            try {
+                Sky.drawMenuHole(vw, vh, dt);
+            } catch (RuntimeException ignored) {
+            }
             if (bhSnd == 1 && state == PLAY) {
                 ui.bhSound(2, 0);
                 bhSnd = 2;
@@ -441,7 +445,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 bhSnd = 0;
             }
             try {
-                Thread.sleep(20);
+                Thread.sleep(6);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }

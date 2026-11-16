@@ -159,6 +159,184 @@ final class Sky {
             }
             """;
 
+
+    private static final String HOLE_FRAG = """
+            #ifdef GL_FRAGMENT_PRECISION_HIGH
+            precision highp float;
+            #else
+            precision mediump float;
+            #endif
+            uniform vec2 uRes;
+            uniform vec2 uC;
+            uniform float uR;
+            uniform vec2 uBand;
+            uniform float uTime;
+            uniform vec3 uTouch;
+            uniform sampler2D uNoise;
+
+            float vn(vec2 p) {
+              vec2 i = floor(p);
+              vec2 f = fract(p);
+              f = f * f * (3.0 - 2.0 * f);
+              return texture2D(uNoise, (i + f + 0.5) * 0.0078125).r;
+            }
+
+            float fbm(vec2 p) {
+              float v = 0.0;
+              float a = 0.5;
+              for (int i = 0; i < 4; i++) {
+                v += a * vn(p);
+                p = mat2(1.6, 1.2, -1.2, 1.6) * p + 7.3;
+                a *= 0.5;
+              }
+              return v * 1.0667;
+            }
+
+            vec3 scene(vec2 fc, float boost) {
+              vec2 uv = vec2(fc.x - uC.x, uC.y - fc.y) / uR;
+              float r = length(uv);
+
+              // stars, pulled slightly towards the hole (lensing)
+              vec2 us = uv * (1.0 - 0.55 / (r * r + 1.2));
+              vec2 fs = vec2(uC.x + us.x * uR, uC.y - us.y * uR);
+              vec2 g = fs / 15.0;
+              vec2 cell = floor(g);
+              vec4 n = texture2D(uNoise, (cell + 0.5) * 0.0078125);
+              float st = smoothstep(0.30, 0.0, length(fract(g) - 0.5 - (n.gb - 0.5) * 0.6)) * step(0.955, n.r);
+              st *= 0.55 + 0.45 * sin(uTime * 2.2 + n.b * 60.0);
+              vec3 col = vec3(0.7, 0.8, 1.0) * st * 0.9;
+              col += vec3(0.30, 0.16, 0.07) * (0.20 * exp(-r * 0.32) + 0.35 * exp(-r * 1.1)) * boost;
+              col *= smoothstep(0.97, 1.0, r);
+
+              float ca = 0.9553;
+              float sa = 0.2955;
+              float x = uv.x * ca - uv.y * sa;
+              float y = uv.x * sa + uv.y * ca;
+              float ay = abs(y);
+
+              float dop = 0.55 + 0.45 * smoothstep(-1.5, 1.5, y);
+              float th = 0.07 + 0.05 * ay;
+              float across = exp(-(x / th) * (x / th));
+              float prof = smoothstep(1.05, 1.4, ay) * smoothstep(4.2, 1.7, ay);
+              float sk = 0.5 + 0.95 * fbm(vec2(x * 9.0 / (1.0 + 0.3 * ay), y * 1.6 - uTime * 0.35));
+              vec3 hot = vec3(1.0, 0.86, 0.66);
+              vec3 cool = vec3(0.95, 0.42, 0.12);
+              vec3 dc = mix(hot, cool, smoothstep(1.1, 3.2, max(ay, r * 0.8)));
+              float em = across * prof * dop * sk * 2.2;
+
+              float sideness = abs(x) / max(r, 0.001);
+              float a1 = (r - 1.28) / 0.2;
+              float a2 = (r - 1.75) / 0.45;
+              float arc1 = exp(-a1 * a1) * smoothstep(0.15, 0.9, sideness);
+              float arc2 = exp(-a2 * a2) * smoothstep(0.3, 1.0, sideness);
+              float sk2 = 0.55 + 0.9 * fbm(vec2(r * 5.0, (y / max(r, 0.001)) * 6.0 - uTime * 0.2));
+              em += arc1 * 1.6 * dop + arc2 * 0.4 * sk2 * dop;
+
+              float rg = (r - 1.035) / 0.022;
+              float ring = exp(-rg * rg);
+              float glow = exp(-max(r - 1.0, 0.0) * 0.9) * smoothstep(0.99, 1.05, r) * 0.14;
+              col += dc * em * smoothstep(0.99, 1.06, r) * boost;
+              col += vec3(1.0, 0.92, 0.78) * ring * 1.5 * boost;
+              col += vec3(0.9, 0.5, 0.2) * glow * boost;
+              return col;
+            }
+
+            void main() {
+              vec2 fc = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
+              if (fc.y < uBand.x || fc.y > uBand.y) {
+                gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                return;
+              }
+              float boost = 1.0 + uTouch.z * 1.1 * exp(-length(uTouch.xy - uC) / (uR * 4.0));
+              vec2 dd = fc - uC;
+              vec3 col;
+              if (dot(dd, dd) < 40.0 * uR * uR) {
+                col = scene(fc + vec2(-0.25, -0.25), boost) + scene(fc + vec2(0.25, -0.25), boost)
+                    + scene(fc + vec2(-0.25, 0.25), boost) + scene(fc + vec2(0.25, 0.25), boost);
+                col *= 0.25;
+              } else {
+                col = scene(fc, boost);
+              }
+
+              if (uTouch.z > 0.003) {
+                vec2 tp = fc - uTouch.xy;
+                float td = length(tp);
+                float R = uRes.y * 0.07;
+                float ang = atan(tp.y, tp.x);
+                float fl = 0.6 + 0.8 * vn(vec2(ang * 2.2 + uTime * 1.3, uTime * 0.7));
+                float k = uTouch.z;
+                float rr = R * (0.35 + 0.65 * k);
+                float u1 = (td - rr) / (R * 0.035);
+                float u2 = (td - rr) / (R * 0.22);
+                float u3 = (td - rr * 1.3) / (R * 0.07);
+                float ring = exp(-u1 * u1);
+                float halo = exp(-u2 * u2);
+                float side = abs(tp.x) / max(td, 1.0);
+                float arc = exp(-u3 * u3) * smoothstep(0.2, 0.9, side);
+                vec3 yel = mix(vec3(1.0, 0.88, 0.55), vec3(0.95, 0.42, 0.12), smoothstep(0.0, 1.0, (td - rr) / (R * 0.5) + 0.3));
+                col *= mix(1.0, smoothstep(rr * 0.7, rr * 0.98, td), 0.85 * k);
+                col += (yel * (ring * 1.7 * fl + arc * 0.9 * fl) + vec3(0.9, 0.45, 0.12) * halo * 0.28) * k;
+              }
+              col = 1.0 - exp(-col * 1.5);
+              gl_FragColor = vec4(col, 1.0);
+            }
+            """;
+
+    private static int holeProg, hRes, hC, hR, hBand, hTime, hTouch, hNoise;
+    /** menu touch point (px from top-left) and band, set from the UI thread */
+    static volatile float menuX, menuY, menuTopPx = 20f, menuBotPx = 30f;
+    static volatile boolean menuDown;
+    private static float touchAmt;
+    private static float holeT;
+
+    static void drawMenuHole(int w, int h, double dt) {
+        if (holeProg == 0 || skyVbo == 0) return;
+        holeT = (holeT + (float) dt) % 4000f;
+        float target = menuDown ? 1f : 0f;
+        touchAmt += (target - touchAmt) * (float) Math.min(1, dt * (menuDown ? 9 : 3.5));
+        float bandTop = menuTopPx, bandBot = h - menuBotPx;
+        float rad = h * .15f;
+        float cx = w * .70f, cy = bandBot - rad * .25f;
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
+        GLES20.glViewport(0, 0, w, h);
+        GLES20.glUseProgram(holeProg);
+        GLES20.glUniform2f(hRes, w, h);
+        GLES20.glUniform2f(hC, cx, cy);
+        GLES20.glUniform1f(hR, rad);
+        GLES20.glUniform2f(hBand, bandTop, bandBot);
+        GLES20.glUniform1f(hTime, holeT);
+        GLES20.glUniform3f(hTouch, menuX, menuY, touchAmt);
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE1);
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, noiseTex);
+        GLES20.glUniform1i(hNoise, 1);
+        GLES20.glDisable(GLES20.GL_BLEND);
+        GLES20.glDisable(GLES20.GL_DEPTH_TEST);
+        GLES20.glDepthMask(false);
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, skyVbo);
+        GLES20.glEnableVertexAttribArray(0);
+        GLES20.glVertexAttribPointer(0, 2, GLES20.GL_FLOAT, false, 8, 0);
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 3);
+        GLES20.glEnable(GLES20.GL_DEPTH_TEST);
+        GLES20.glDepthMask(true);
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+        Gfx.use();
+    }
+
+    private static void initHole() {
+        try {
+            holeProg = link(SKY_VERT, HOLE_FRAG, new String[]{"aP"});
+            hRes = GLES20.glGetUniformLocation(holeProg, "uRes");
+            hC = GLES20.glGetUniformLocation(holeProg, "uC");
+            hR = GLES20.glGetUniformLocation(holeProg, "uR");
+            hBand = GLES20.glGetUniformLocation(holeProg, "uBand");
+            hTime = GLES20.glGetUniformLocation(holeProg, "uTime");
+            hTouch = GLES20.glGetUniformLocation(holeProg, "uTouch");
+            hNoise = GLES20.glGetUniformLocation(holeProg, "uNoise");
+        } catch (RuntimeException e) {
+            holeProg = 0;
+        }
+    }
+
     private static final String RAIN_VERT = """
             uniform mat4 uVP;
             uniform vec3 uCam;
@@ -471,6 +649,7 @@ final class Sky {
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
 
         skyVbo = buffer(new float[]{-1, -1, 3, -1, -1, 3});
+        initHole();
 
         Random r = new Random(7);
         float[] corners = {-1, 0, 1, 0, 1, 1, -1, 0, 1, 1, -1, 1};
