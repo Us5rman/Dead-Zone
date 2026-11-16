@@ -144,10 +144,22 @@ public class MainActivity extends Activity implements Game.Ui {
 
     private void initSounds() {
         try {
-            pool = new SoundPool.Builder().setMaxStreams(10).setAudioAttributes(new AudioAttributes.Builder()
+            pool = new SoundPool.Builder().setMaxStreams(16).setAudioAttributes(new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_GAME)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()).build();
-            String[] names = {"mp_join", "mp_far_1", "mp_far_2", "mp_far_3", "mp_near_1", "mp_near_2", "mp_near_3"};
+            java.util.ArrayList<String> names = new java.util.ArrayList<>();
+            names.add("multiplayer_join_connected");
+            names.add("black_hole_ambient_rumble");
+            for (int i = 1; i <= 3; i++) {
+                names.add("gunshot_close_player_" + i);
+                names.add("gunshot_far_away_" + i);
+            }
+            for (String surf : new String[]{"asphalt", "grass", "wood", "water_splash"}) {
+                for (int i = 1; i <= 4; i++) {
+                    names.add("footstep_" + surf + "_" + i);
+                    names.add("footstep_" + surf + "_run_" + i);
+                }
+            }
             for (String n : names) {
                 int res = getResources().getIdentifier(n, "raw", getPackageName());
                 if (res != 0) soundIds.put(n, pool.load(this, res, 1));
@@ -171,7 +183,7 @@ public class MainActivity extends Activity implements Game.Ui {
                         bhResume = false;
                     }
                     if (cmd == 1) {
-                        bhP = MediaPlayer.create(MainActivity.this, R.raw.bh_grow_60);
+                        bhP = MediaPlayer.create(MainActivity.this, R.raw.black_hole_growing_60s);
                         if (bhP == null) return;
                         bhP.setVolume(.9f, .9f);
                         if (posMs > 0) bhP.seekTo(posMs);
@@ -188,11 +200,11 @@ public class MainActivity extends Activity implements Game.Ui {
     }
 
     @Override
-    public void sound(String name, float vol) {
+    public void sound(String name, float vol, float rate) {
         SoundPool p = pool;
         Integer id = soundIds.get(name);
         if (p == null || id == null) return;
-        p.play(id, vol, vol, 1, 0, 1f);
+        p.play(id, Math.min(1f, vol), Math.min(1f, vol), 1, 0, rate);
     }
 
     private void rebuildUi() {

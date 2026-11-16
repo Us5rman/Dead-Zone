@@ -36,7 +36,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
         void rain(float level);
 
-        void sound(String name, float vol);
+        void sound(String name, float vol, float rate);
 
         void bhSound(int cmd, int posMs);
     }
@@ -164,6 +164,9 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     int bgHex = 0x070b10;
     final ArrayList<Trail> trails = new ArrayList<>();
     private World skyWorld;
+    private float[] puddleSpots = new float[0];
+    private int stepNo;
+    private double ambT = 20;
     private static final double TRACER_SPEED = 380;
     private final Geo trailGeo = Geo.plane(1, 1);
     private final Mat mTracer = glowMat(0xffe2a8);
@@ -439,9 +442,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
             skyWorld = world;
             try {
                 Sky.setShelter(world.shelterMap());
-                Sky.setPuddles(world.puddleSpots());
+                puddleSpots = world.puddleSpots();
+                Sky.setPuddles(puddleSpots);
             } catch (RuntimeException e) {
                 Sky.setShelter(null);
+                puddleSpots = new float[0];
                 Sky.setPuddles(null);
             }
         }
@@ -1063,10 +1068,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
     private void shotSound(Remote q) {
         if (q == null) return;
         double d = Math.hypot(q.x - cx, q.z - cz);
-        if (d > 75) return;
+        if (d > 420) return;
         int v = 1 + rng.nextInt(3);
-        if (d < 28) ui.sound("mp_near_" + v, (float) Math.max(.25, 1 - d / 28 * .65));
-        else ui.sound("mp_far_" + v, (float) Math.max(.12, .85 - (d - 28) / 47 * .7));
+        float rate = .95f + rng.nextFloat() * .1f;
+        if (d < 110) ui.sound("gunshot_close_player_" + v, (float) Math.max(.2, 1 - d / 110 * .75), rate);
+        else ui.sound("gunshot_far_away_" + v, (float) Math.max(.1, .9 - (d - 110) / 310 * .8), rate);
     }
 
     private void remoteShot(String id, JSONObject m) {
@@ -1408,6 +1414,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         double fovT = 70 + (runFov ? 9 : 0) + (diving ? 5 : 0) + ((slideT > 0 || vaultT > 0) ? 7 : 0);
         fovCur += (fovT - fovCur) * Math.min(1, dt * 6);
         if (moving && !crawling) bob += dt * sp * 1.6;
+        int stepIdx = (int) Math.floor((bob + Math.PI / 2) / (2 * Math.PI));
+        if (stepIdx != stepNo) {
+            if (moving && !crawling) footstep(fast);
+            stepNo = stepIdx;
+        }
         cy = 1.7 + jy - crouchOff + (moving && !crawling ? Math.sin(bob) * (fast ? .095 : .072) : 0)
                 + (crawling && Math.hypot(fx, fz) > .1 ? Math.sin(crawlPh * 2) * .015 : 0);
 
@@ -1521,6 +1532,11 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
 
         updateDebris(dt);
 
+        ambT -= dt;
+        if (wave >= 2 && ambT <= 0) {
+            ambT = 28 + rng.nextDouble() * 32;
+            ui.sound("black_hole_ambient_rumble", (float) Math.min(.85, .3 + .2 * bhCur), 1f);
+        }
         if (awakeT >= 0) {
             awakeT += dt;
             if (awakeT > AWAKE_TIME) awakeT = -1;
@@ -1837,6 +1853,38 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         return g;
     }
 
+    private boolean insideAny(java.util.List<double[]> boxes, double x, double z) {
+        for (double[] f : boxes) if (x > f[0] && x < f[2] && z > f[1] && z < f[3]) return true;
+        return false;
+    }
+
+    private String surfaceAt(double x, double z) {
+        if (insideAny(world.floors, x, z)) return "wood";
+        for (double[] r : world.roads) {
+            if (Math.abs(x - r[0]) < r[2] / 2 && Math.abs(z - r[1]) < r[3] / 2) return "asphalt";
+        }
+        return "grass";
+    }
+
+    private double wetUnder(double x, double z) {
+        double grow = Math.max(0, Math.min(1, (Gfx.wet - .3) / .55));
+        if (grow <= .02 || insideAny(world.floors, x, z)) return 0;
+        double a = Gfx.wet > .55 ? Math.min(.45, (Gfx.wet - .55) * 1.2) : 0;
+        for (int i = 0; i + 3 < puddleSpots.length; i += 4) {
+            if (Math.hypot(x - puddleSpots[i], z - puddleSpots[i + 1]) < puddleSpots[i + 2] * .8 * grow) {
+                a = Math.max(a, .55 + .45 * grow);
+            }
+        }
+        return a;
+    }
+
+    private void footstep(boolean run) {
+        float rate = .95f + rng.nextFloat() * .1f;
+        ui.sound("footstep_" + surfaceAt(cx, cz) + (run ? "_run" : "") + "_" + (1 + rng.nextInt(4)), run ? .85f : .6f, rate);
+        double wet = wetUnder(cx, cz);
+        if (wet > .05) ui.sound("footstep_water_splash" + (run ? "_run" : "") + "_" + (1 + rng.nextInt(4)), (float) (wet * (run ? .9 : .65)), rate);
+    }
+
     private void toggleCrawl() {
         if (pDead || diving || slideT > 0 || vaultT > 0 || !grounded) return;
         crawling = !crawling;
@@ -2098,7 +2146,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         switch (t) {
             case "welcome":
                 role = CLIENT;
-                ui.sound("mp_join", 1f);
+                ui.sound("multiplayer_join_connected", 1f, 1f);
                 myIdx = m.optInt("idx");
                 hud.room = "";
                 worldId = null;
@@ -2184,7 +2232,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 role = HOST;
                 netId = "host";
                 myIdx = 0;
-                ui.sound("mp_join", 1f);
+                ui.sound("multiplayer_join_connected", 1f, 1f);
                 ui.status("");
                 pl.clear();
                 worldId = pendId;

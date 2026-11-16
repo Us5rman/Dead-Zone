@@ -31,6 +31,7 @@ final class World {
     final ArrayList<double[]> glass = new ArrayList<>();
     final ArrayList<double[]> walls = new ArrayList<>();
     final ArrayList<double[]> roofs = new ArrayList<>();
+    final ArrayList<double[]> floors = new ArrayList<>();
     final ArrayList<Light> lights = new ArrayList<>();
     final ArrayList<Batch> solid = new ArrayList<>();
     final ArrayList<Batch> blend = new ArrayList<>();
@@ -352,6 +353,7 @@ final class World {
         mb(w + .8, .4, d + .8, cx, h + .2, cz, mConc);
         roofs.add(new double[]{cx - (w + .8) / 2, cz - (d + .8) / 2, cx + (w + .8) / 2, cz + (d + .8) / 2, h + .4});
         mesh(Prim.plane(w, d), mFloor, cx, .05, cz, -PI / 2, 0, 0);
+        floors.add(new double[]{cx - w / 2, cz - d / 2, cx + w / 2, cz + d / 2});
     }
 
     private static double[][] g(double[]... a) {
