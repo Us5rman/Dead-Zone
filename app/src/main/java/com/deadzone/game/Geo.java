@@ -68,4 +68,12 @@ final class Geo {
         GLES20.glVertexAttribPointer(Gfx.aUv, 2, GLES20.GL_FLOAT, false, 32, 24);
         GLES20.glDrawArrays(mode, 0, count);
     }
+
+    void release() {
+        if (gen == Gfx.gen && vbo != 0) {
+            GLES20.glDeleteBuffers(1, new int[]{vbo}, 0);
+        }
+        gen = -1;
+        vbo = 0;
+    }
 }

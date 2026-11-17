@@ -216,9 +216,13 @@ final class Overlay extends View {
 
     private void buildMapBmp() {
         World wd = game.world;
+        if (wd.open) {
+            mapBmp = null;
+            return;
+        }
         if (mapBmp != null && mapSeed == wd.seed) return;
         int sz = 900;
-        float k = sz / (2f * World.HALF), hh = World.HALF;
+        float k = sz / (2f * (float) wd.half), hh = (float) wd.half;
         Bitmap bm = Bitmap.createBitmap(sz, sz, Bitmap.Config.ARGB_8888);
         Canvas bc = new Canvas(bm);
         bc.drawColor(0xFF10160f);
@@ -239,11 +243,15 @@ final class Overlay extends View {
 
     private void drawBig(Canvas c, int w, int h) {
         buildMapBmp();
+        boolean open = game.world.open;
+        float radius = 220f;
+        float ox = open ? (float) hud.px : 0f, oz = open ? (float) hud.pz : 0f;
+        float hh = open ? radius : (float) game.world.half;
         p.setStyle(Paint.Style.FILL);
         p.setColor(0xF2000000);
         c.drawRect(0, 0, w, h, p);
-        float m = Math.min(w, h) * .92f, left = (w - m) / 2f, top = (h - m) / 2f, s = m / (2f * World.HALF);
-        c.drawBitmap(mapBmp, null, new RectF(left, top, left + m, top + m), p);
+        float m = Math.min(w, h) * .92f, left = (w - m) / 2f, top = (h - m) / 2f, s = m / (2f * hh);
+        if (!open) c.drawBitmap(mapBmp, null, new RectF(left, top, left + m, top + m), p);
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeWidth(Math.max(1f, d));
         p.setColor(0xFF6a7078);
@@ -255,7 +263,7 @@ final class Overlay extends View {
         p.setTextAlign(Paint.Align.CENTER);
         for (double[] sp : game.world.spots) {
             int t = (int) sp[2];
-            float x = left + (float) (sp[0] + World.HALF) * s, y = top + (float) (sp[1] + World.HALF) * s;
+            float x = left + (float) (sp[0] - ox + hh) * s, y = top + (float) (sp[1] - oz + hh) * s;
             p.setColor(cols[t]);
             c.drawCircle(x, y, 3.5f * d, p);
             c.drawText(names[t], x, y - 6 * d, p);
@@ -264,13 +272,13 @@ final class Overlay extends View {
         float[] zz = hud.mz;
         for (int i = 0; i + 2 < zz.length; i += 3) {
             p.setColor(zc[Math.max(0, Math.min(4, (int) zz[i + 2]))]);
-            c.drawCircle(left + (zz[i] + World.HALF) * s, top + (zz[i + 1] + World.HALF) * s, 2f * d, p);
+            c.drawCircle(left + (zz[i] - ox + hh) * s, top + (zz[i + 1] - oz + hh) * s, 2f * d, p);
         }
         p.setColor(0xFF33ddff);
         float[] pp = hud.mp;
-        for (int i = 0; i + 1 < pp.length; i += 2) c.drawCircle(left + (pp[i] + World.HALF) * s, top + (pp[i + 1] + World.HALF) * s, 3f * d, p);
+        for (int i = 0; i + 1 < pp.length; i += 2) c.drawCircle(left + (pp[i] - ox + hh) * s, top + (pp[i + 1] - oz + hh) * s, 3f * d, p);
         c.save();
-        c.translate(left + (float) (hud.px + World.HALF) * s, top + (float) (hud.pz + World.HALF) * s);
+        c.translate(left + (float) (hud.px - ox + hh) * s, top + (float) (hud.pz - oz + hh) * s);
         c.rotate(-(float) Math.toDegrees(hud.pyaw));
         mmArrow.reset();
         mmArrow.moveTo(0, -7 * d);
@@ -384,7 +392,7 @@ final class Overlay extends View {
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeWidth(Math.max(1f, d));
         p.setColor(0xFF6a7078);
-        c.drawRect(-World.HALF * s, -World.HALF * s, World.HALF * s, World.HALF * s, p);
+        if (!game.world.open) c.drawRect(-(float) game.world.half * s, -(float) game.world.half * s, (float) game.world.half * s, (float) game.world.half * s, p);
         p.setStyle(Paint.Style.FILL);
         int[] zc = {0xFFdd3322, 0xFFff8822, 0xFFdd33aa, 0xFF9955ff, 0xFFffdd33};
         float[] zz = hud.mz;

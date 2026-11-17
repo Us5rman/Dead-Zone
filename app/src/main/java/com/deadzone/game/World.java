@@ -37,6 +37,7 @@ final class World {
     final ArrayList<double[]> walls = new ArrayList<>();
     final ArrayList<double[]> floors = new ArrayList<>();
     final ArrayList<double[]> spots = new ArrayList<>();
+    final ArrayList<double[]> ladders = new ArrayList<>();
     final ArrayList<double[]> roofs = new ArrayList<>();   // x0, z0, x1, z1, top
     final ArrayList<Light> lights = new ArrayList<>();
     final ArrayList<Batch> solid = new ArrayList<>();
@@ -615,7 +616,7 @@ final class World {
         mesh(Prim.circle(.9, 8), mPool, x, .055, z, -PI / 2, 0, 0);
     }
 
-    private final ArrayList<double[]> roads = new ArrayList<>();   // axis (0 = along x, 1 = along z), position, from, to
+    final ArrayList<double[]> roads = new ArrayList<>();   // axis (0 = along x, 1 = along z), position, from, to
     private final ArrayList<double[]> zones = new ArrayList<>();
 
     private void setArea(double x0, double x1, double z0, double z1) {

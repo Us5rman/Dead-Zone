@@ -25,6 +25,7 @@ final class Sky {
     private static int pVP, pCam, pTime, pGrow, pRain, pFlash, pFogCol, pFogDen, pHole, pMoonCol;
     private static boolean vtf;
     private static byte[] shData;
+    private static int shDataN = 400;
     private static boolean shDirty;
     private static float[] pudData = new float[0];
     private static boolean pudDirty;
@@ -780,8 +781,9 @@ final class Sky {
         Gfx.use();
     }
 
-    static void setShelter(byte[] data) {
+    static void setShelter(byte[] data, int n) {
         shData = data;
+        shDataN = n;
         shDirty = true;
     }
 
@@ -802,7 +804,7 @@ final class Sky {
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST);
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
-        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_LUMINANCE, World.SH_N, World.SH_N, 0,
+        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_LUMINANCE, shDataN, shDataN, 0,
                 GLES20.GL_LUMINANCE, GLES20.GL_UNSIGNED_BYTE, bb);
         GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT, 4);
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);

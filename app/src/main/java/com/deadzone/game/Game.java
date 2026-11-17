@@ -642,7 +642,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         if (skyWorld != world) {
             skyWorld = world;
             try {
-                Sky.setShelter(world.shelterMap());
+                Sky.setShelter(world.shelterMap(), world.shN);
                 puddleSpots = world.puddleSpots();
                 Sky.setPuddles(puddleSpots);
             } catch (RuntimeException e) {
@@ -1438,8 +1438,13 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         List<Tgt> l = allPl();
         Tgt bp = l.isEmpty() ? new Tgt("", 0, 0) : l.get(rng.nextInt(l.size()));
         double a = rng.nextDouble() * 6.28, d = 26 + rng.nextDouble() * 10;
-        z.x = Math.max(-World.HALF + 3, Math.min(World.HALF - 3, bp.x + Math.cos(a) * d));
-        z.z = Math.max(-World.HALF + 3, Math.min(World.HALF - 3, bp.z + Math.sin(a) * d));
+        if (world.open) {
+            z.x = bp.x + Math.cos(a) * d;
+            z.z = bp.z + Math.sin(a) * d;
+        } else {
+            z.x = Math.max(-world.half + 3, Math.min(world.half - 3, bp.x + Math.cos(a) * d));
+            z.z = Math.max(-world.half + 3, Math.min(world.half - 3, bp.z + Math.sin(a) * d));
+        }
         for (int k = 0; k < 30 && (!world.freeAt(z.x, z.z) || tooClose(l, z)); k++) {
             z.x = (rng.nextDouble() - .5) * 86;
             z.z = (rng.nextDouble() - .5) * 86;
@@ -1601,8 +1606,10 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
         }
         cx += hvx * dt;
         cz += hvz * dt;
-        cx = Math.max(-World.HALF + 1, Math.min(World.HALF - 1, cx));
-        cz = Math.max(-World.HALF + 1, Math.min(World.HALF - 1, cz));
+        if (!world.open) {
+            cx = Math.max(-world.half + 1, Math.min(world.half - 1, cx));
+            cz = Math.max(-world.half + 1, Math.min(world.half - 1, cz));
+        }
         double[] pp = {cx, cz};
         collide(pp, .5, jy);
         cx = pp[0];
