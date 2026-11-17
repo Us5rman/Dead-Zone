@@ -106,7 +106,10 @@ final class Sky {
                 float rs = 0.075 * uSize;
                 vec3 bt = normalize(cross(vec3(0.0, 1.0, 0.0), uBH));
                 vec3 bb = cross(uBH, bt);
-                vec2 uv = vec2(dot(d, bt), dot(d, bb)) / (rs * md);
+                vec2 pq = vec2(dot(d, bt), dot(d, bb));
+                float th = acos(clamp(md, -1.0, 1.0));
+                float fr = th < 1.5708 ? sin(th) : 1.0 + (th - 1.5708);
+                vec2 uv = pq / max(length(pq), 0.00001) * fr / rs;
                 col *= smoothstep(0.97, 1.0, length(uv));
                 float lvl = 1.0 + smoothstep(1.1, 1.3, uSize) + smoothstep(1.8, 2.0, uSize) + smoothstep(2.5, 2.7, uSize) + smoothstep(3.4, 3.6, uSize);
                 col += 1.0 - exp(-gargantua(uv, uTime, lvl) * 1.4);
@@ -163,7 +166,7 @@ final class Sky {
               float ang = atan(p.y, p.x + 0.00001);
               float topv = smoothstep(-0.2, 1.0, p.y / rr);
               float re = rr / (1.0 + 0.35 * (1.0 - topv) * smoothstep(1.1, 1.7, rr));
-              float st = hfbm(vec2(ang * 0.35 - t * 0.02, re * 38.0));
+              float st = hfbm(vec2(ang * 0.9 - t * 0.05, re * 38.0));
               float lines = 0.35 + 1.25 * st;
               float a = (re - 1.12) / 0.16;
               float b = (re - 1.36) / 0.24;
@@ -200,8 +203,8 @@ final class Sky {
               float th = (0.05 + 0.16 * smoothstep(0.3, 2.5, ax) * smoothstep(6.2, 3.0, ax)) * (1.0 + 0.3 * wT);
               float orbR = 1.0 / (ax * sqrt(ax) + 0.8);
               float orb = t * 0.4 * orbR * (uv.x / (abs(uv.x) + 0.3));
-              float cl = hfbm(vec2(uv.x * 0.6 - orb, uv.y * 5.0));
-              float cl2 = hfbm(vec2(uv.x * 1.5 - orb * 1.5 + 3.0, uv.y * 12.0));
+              float cl = hfbm(vec2(uv.x * 1.2 - orb, uv.y * 5.0));
+              float cl2 = hfbm(vec2(uv.x * 3.2 - orb * 1.5 + 3.0, uv.y * 12.0));
               float taper = smoothstep(6.2, 2.4, ax);
               float cr = d / (0.35 * th);
               float core = exp(-cr * cr) * 3.0 * (0.6 + 0.8 * cl);
@@ -225,7 +228,7 @@ final class Sky {
               vec2 e = vec2(uv.x / 3.4, (uv.y - yb) / 0.9);
               float er = length(e);
               float ea = atan(e.y, e.x + 0.00001);
-              vec2 gc = vec2(ea * 16.0 - t * 0.2 / (er * sqrt(er) + 0.3), er * 30.0);
+              vec2 gc = vec2(ea * 34.0 - t * 0.4 / (er * sqrt(er) + 0.3), er * 30.0);
               float gdot = smoothstep(0.30, 0.0, length(fract(gc) - 0.5));
               col += vec3(1.0, 0.85, 0.6) * step(0.93, hs(floor(gc))) * gdot
                    * smoothstep(0.30, 0.55, er) * smoothstep(1.15, 0.8, er) * wG * 0.9;
@@ -760,7 +763,7 @@ final class Sky {
         GLES20.glUniform3f(sCam, cam[0], cam[1], cam[2]);
         GLES20.glUniform3f(sBH, BH[0], BH[1], BH[2]);
         GLES20.glUniform1f(sSize, Gfx.bh);
-        GLES20.glUniform1f(sCut, (float) Math.cos(Math.atan(.075 * Gfx.bh * 6.5)));
+        GLES20.glUniform1f(sCut, (float) Math.cos(Math.min(.075 * Gfx.bh * 6.5, 3.0)));
         GLES20.glUniform3f(sRefN, rn[0], rn[1], rn[2]);
         GLES20.glUniform3f(sHor, Gfx.FOG[0], Gfx.FOG[1], Gfx.FOG[2]);
         GLES20.glUniform1f(sTime, Gfx.time);
