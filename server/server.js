@@ -28,11 +28,19 @@ wss.on('connection', ws => {
     if (!m) return;
     if (m.t === 'ping') return put(ws, { t: 'pong', ts: m.ts });
 
+    if (m.t === 'list') {
+      const out = [];
+      rooms.forEach((r, code) => {
+        if (r.pub) out.push({ code, name: r.name, host: r.hostName, n: 1 + r.joiners.size, max: MAX_JOINERS + 1 });
+      });
+      return put(ws, { t: 'list', rooms: out.slice(0, 50) });
+    }
+
     if (m.t === 'host') {
       const code = String(m.code || '').toUpperCase().slice(0, 4);
       if (ws.room) return;
       if (code.length !== 4 || rooms.has(code)) return put(ws, { t: 'err', e: 'taken' });
-      rooms.set(code, { host: ws, joiners: new Map() });
+      rooms.set(code, { host: ws, joiners: new Map(), pub: !!m.pub, name: String(m.name || '').slice(0, 24), hostName: String(m.host || '').slice(0, 16) });
       ws.room = { code, host: true };
       put(ws, { t: 'hosted' });
       return;

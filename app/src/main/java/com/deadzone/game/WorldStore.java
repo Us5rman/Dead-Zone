@@ -16,7 +16,7 @@ final class WorldStore {
     static final class Info {
         String id, name, dir;
         long seed, last;
-        int wave, kills;
+        int wave, kills, type;
     }
 
     private final Context ctx;
@@ -48,6 +48,7 @@ final class WorldStore {
             o.put("seed", i.seed);
             o.put("wave", i.wave);
             o.put("kills", i.kills);
+            o.put("type", i.type);
             o.put("last", i.last);
             GameFiles.write(new File(new File(worlds(), i.dir), "world.json"), o.toString());
         } catch (Exception ignored) {
@@ -78,6 +79,7 @@ final class WorldStore {
                     i.seed = o.getLong("seed");
                     i.wave = o.optInt("wave");
                     i.kills = o.optInt("kills");
+                    i.type = o.optInt("type");
                     i.last = o.optLong("last");
                     out.add(i);
                 } catch (Exception ignored) {
@@ -94,6 +96,10 @@ final class WorldStore {
     }
 
     synchronized Info add(long seed, String name) {
+        return add(seed, name, 0);
+    }
+
+    synchronized Info add(long seed, String name, int type) {
         int n = list().size() + 1;
         if (name == null || name.trim().isEmpty()) name = "World " + n;
         Info i = new Info();
@@ -101,6 +107,7 @@ final class WorldStore {
         i.dir = unique(i.name, null);
         i.id = Long.toString(System.nanoTime(), 36) + n;
         i.seed = seed;
+        i.type = type;
         i.last = System.currentTimeMillis();
         save(i);
         return i;

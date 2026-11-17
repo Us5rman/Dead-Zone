@@ -3,6 +3,7 @@ package com.deadzone.game;
 import android.os.Handler;
 import android.os.Looper;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -66,8 +67,67 @@ final class Net {
         return o;
     }
 
-    void host(String code) {
+    private boolean hPub;
+    private String hName = "", hHost = "";
+
+    interface BrowseCb {
+        void result(long ms, JSONArray rooms);
+
+        void fail();
+    }
+
+    void host(String code, boolean pub, String name, String hostName) {
+        hPub = pub;
+        hName = name == null ? "" : name;
+        hHost = hostName == null ? "" : hostName;
         open(true, code);
+    }
+
+    void browse(final BrowseCb cb) {
+        final long[] t0 = {0};
+        final long[] ms = {-1};
+        final JSONArray[] rooms = {null};
+        final boolean[] done = {false};
+        final WebSocket[] sock = new WebSocket[1];
+        final Runnable[] finish = new Runnable[1];
+        finish[0] = new Runnable() {
+            @Override
+            public void run() {
+                synchronized (done) {
+                    if (done[0]) return;
+                    done[0] = true;
+                }
+                if (sock[0] != null) sock[0].cancel();
+                if (ms[0] >= 0) cb.result(ms[0], rooms[0] != null ? rooms[0] : new JSONArray());
+                else cb.fail();
+            }
+        };
+        main.postDelayed(finish[0], 7000);
+        sock[0] = http.newWebSocket(new Request.Builder().url(Config.SERVER).build(), new WebSocketListener() {
+            @Override
+            public void onOpen(WebSocket s, Response r) {
+                t0[0] = System.nanoTime();
+                s.send(obj("t", "ping", "ts", 1).toString());
+                s.send(obj("t", "list").toString());
+            }
+
+            @Override
+            public void onMessage(WebSocket s, String text) {
+                try {
+                    JSONObject m = new JSONObject(text);
+                    String t = m.optString("t");
+                    if (t.equals("pong") && ms[0] < 0) ms[0] = (System.nanoTime() - t0[0]) / 1000000L;
+                    if (t.equals("list")) rooms[0] = m.optJSONArray("rooms");
+                    if (ms[0] >= 0 && rooms[0] != null) main.post(finish[0]);
+                } catch (JSONException ignored) {
+                }
+            }
+
+            @Override
+            public void onFailure(WebSocket s, Throwable t, Response r) {
+                main.post(finish[0]);
+            }
+        });
     }
 
     void join(String code) {
@@ -103,7 +163,7 @@ final class Net {
             @Override
             public void onOpen(WebSocket s, Response r) {
                 if (my != serial) return;
-                s.send(host ? obj("t", "host", "code", code).toString() : obj("t", "join", "code", code).toString());
+                s.send(host ? obj("t", "host", "code", code, "pub", hPub, "name", hName, "host", hHost).toString() : obj("t", "join", "code", code).toString());
             }
 
             @Override
