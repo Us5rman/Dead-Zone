@@ -106,7 +106,7 @@ final class Sky {
                 float rs = 0.075 * uSize;
                 vec3 bt = normalize(cross(vec3(0.0, 1.0, 0.0), uBH));
                 vec3 bb = cross(uBH, bt);
-                vec2 uv = vec2(dot(d, bt), dot(d, bb)) / rs;
+                vec2 uv = vec2(dot(d, bt), dot(d, bb)) / (rs * md);
                 col *= smoothstep(0.97, 1.0, length(uv));
                 float lvl = 1.0 + smoothstep(1.1, 1.3, uSize) + smoothstep(1.8, 2.0, uSize) + smoothstep(2.5, 2.7, uSize) + smoothstep(3.4, 3.6, uSize);
                 col += 1.0 - exp(-gargantua(uv, uTime, lvl) * 1.4);
@@ -760,7 +760,7 @@ final class Sky {
         GLES20.glUniform3f(sCam, cam[0], cam[1], cam[2]);
         GLES20.glUniform3f(sBH, BH[0], BH[1], BH[2]);
         GLES20.glUniform1f(sSize, Gfx.bh);
-        GLES20.glUniform1f(sCut, (float) Math.cos(Math.min(.075 * Gfx.bh * 6.5, 1.25)));
+        GLES20.glUniform1f(sCut, (float) Math.cos(Math.atan(.075 * Gfx.bh * 6.5)));
         GLES20.glUniform3f(sRefN, rn[0], rn[1], rn[2]);
         GLES20.glUniform3f(sHor, Gfx.FOG[0], Gfx.FOG[1], Gfx.FOG[2]);
         GLES20.glUniform1f(sTime, Gfx.time);

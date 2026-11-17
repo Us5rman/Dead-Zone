@@ -568,6 +568,8 @@ final class World {
     private void car(double x, double z, boolean v) {
         box(x, z, v ? 1.8 : 4.2, v ? 4.2 : 1.8, 1, mRust);
         mb(v ? 1.5 : 2.2, .7, v ? 2.2 : 1.5, x, 1.35, z, mRust);
+        solidBox(x, 1.35, z, v ? 1.5 : 2.2, .7, v ? 2.2 : 1.5);
+        obs.add(new double[]{x, z, v ? 1.5 : 2.2, v ? 2.2 : 1.5, 1.7});
     }
 
     private void barrel(double x, double z, boolean fire) {
@@ -590,7 +592,8 @@ final class World {
 
     private void tires(double x, double z) {
         for (int i = 0; i < 3; i++) mesh(Prim.cyl(.5, .5, .3, 8, false), mTire, x + (i == 2 ? .1 : 0), .15 + i * .3, z);
-        obs.add(new double[]{x, z, 1, 1, .9});
+        obs.add(new double[]{x, z, 1, 1, .6});
+        obs.add(new double[]{x + .1, z, 1, 1, .9});
     }
 
     private void dtree(double x, double z, double h) {
@@ -979,7 +982,7 @@ final class World {
             n++;
         }
 
-        cars(cnt(8 + rng.nextInt(5)), true);
+        cars(cnt(4 + rng.nextInt(3)), true);
         barrels(cnt(6 + rng.nextInt(4)), cnt(3));
         crates(cnt(10 + rng.nextInt(7)));
         sandbags(cnt(3 + rng.nextInt(3)));
@@ -1121,7 +1124,7 @@ final class World {
                 n++;
             }
             lampsAlong();
-            cars(pick(1, 3), true);
+            cars(pick(0, 2), true);
             barrels(pick(1, 3), 1);
             crates(pick(2, 5));
             sandbags(pick(0, 2));
@@ -1143,7 +1146,7 @@ final class World {
             trees(pick(3, 6));
             deadTrees(pick(2, 5));
             crates(pick(1, 3));
-            cars(pick(0, 2), true);
+            cars(pick(0, 1), true);
             barrels(pick(1, 3), 1);
             tireStacks(pick(0, 2));
             bodies(pick(0, 2));
