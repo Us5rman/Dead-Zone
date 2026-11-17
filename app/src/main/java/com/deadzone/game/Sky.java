@@ -163,7 +163,7 @@ final class Sky {
               float ang = atan(p.y, p.x + 0.00001);
               float topv = smoothstep(-0.2, 1.0, p.y / rr);
               float re = rr / (1.0 + 0.35 * (1.0 - topv) * smoothstep(1.1, 1.7, rr));
-              float st = hfbm(vec2(ang * 0.9 - t * 0.05, re * 38.0));
+              float st = hfbm(vec2(ang * 0.35 - t * 0.02, re * 38.0));
               float lines = 0.35 + 1.25 * st;
               float a = (re - 1.12) / 0.16;
               float b = (re - 1.36) / 0.24;
@@ -200,8 +200,8 @@ final class Sky {
               float th = (0.05 + 0.16 * smoothstep(0.3, 2.5, ax) * smoothstep(6.2, 3.0, ax)) * (1.0 + 0.3 * wT);
               float orbR = 1.0 / (ax * sqrt(ax) + 0.8);
               float orb = t * 0.4 * orbR * (uv.x / (abs(uv.x) + 0.3));
-              float cl = hfbm(vec2(uv.x * 1.2 - orb, uv.y * 5.0));
-              float cl2 = hfbm(vec2(uv.x * 3.2 - orb * 1.5 + 3.0, uv.y * 12.0));
+              float cl = hfbm(vec2(uv.x * 0.6 - orb, uv.y * 5.0));
+              float cl2 = hfbm(vec2(uv.x * 1.5 - orb * 1.5 + 3.0, uv.y * 12.0));
               float taper = smoothstep(6.2, 2.4, ax);
               float cr = d / (0.35 * th);
               float core = exp(-cr * cr) * 3.0 * (0.6 + 0.8 * cl);
@@ -225,7 +225,7 @@ final class Sky {
               vec2 e = vec2(uv.x / 3.4, (uv.y - yb) / 0.9);
               float er = length(e);
               float ea = atan(e.y, e.x + 0.00001);
-              vec2 gc = vec2(ea * 34.0 - t * 0.4 / (er * sqrt(er) + 0.3), er * 30.0);
+              vec2 gc = vec2(ea * 16.0 - t * 0.2 / (er * sqrt(er) + 0.3), er * 30.0);
               float gdot = smoothstep(0.30, 0.0, length(fract(gc) - 0.5));
               col += vec3(1.0, 0.85, 0.6) * step(0.93, hs(floor(gc))) * gdot
                    * smoothstep(0.30, 0.55, er) * smoothstep(1.15, 0.8, er) * wG * 0.9;
@@ -402,7 +402,7 @@ final class Sky {
               float dist = length(toCam);
               float keep = fract(aSeed.x * 53.7 + aSeed.y * 17.3 + aSeed.z * 7.1);
               float w = max(0.007, dist * 0.0048) * (0.7 + 0.6 * r2);
-              float len = (0.5 + r * 0.55) * (0.8 + 0.5 * uRain);
+              float len = (1.1 + r * 1.2) * (0.8 + 0.5 * uRain);
               float hh = hAt(head.xz);
               vec3 pos;
               float alpha = 1.0;
