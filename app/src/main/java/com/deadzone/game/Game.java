@@ -646,7 +646,7 @@ final class Game implements GLSurfaceView.Renderer, Net.Callbacks {
                 puddleSpots = world.puddleSpots();
                 Sky.setPuddles(puddleSpots);
             } catch (RuntimeException e) {
-                Sky.setShelter(null);
+                Sky.setShelter(null, 0);
                 puddleSpots = new float[0];
                 Sky.setPuddles(null);
             }
